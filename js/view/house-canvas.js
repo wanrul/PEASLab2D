@@ -1,3 +1,4 @@
+import { translate } from '../i18n.js';
 /**
  * CollabPEAS - High-Fidelity Realistic Apartment Canvas Engine
  * Directly renders Materials/Apartment.png at full native resolution with high-DPI scaling.
@@ -508,7 +509,7 @@ export class HouseCanvasRenderer {
       ctx.fillStyle = 'rgba(255, 255, 255, 0.45)';
       ctx.font = 'bold 13px Inter, -apple-system, sans-serif';
       ctx.letterSpacing = '1px';
-      ctx.fillText(r.name.toUpperCase(), r.labelX, r.labelY);
+      ctx.fillText(translate(r.name.toUpperCase()), r.labelX, r.labelY);
     }
     ctx.restore();
   }
@@ -541,7 +542,7 @@ export class HouseCanvasRenderer {
         ctx.fillStyle = 'rgba(15, 23, 42, 0.95)';
         ctx.strokeStyle = '#38bdf8';
         ctx.lineWidth = 1;
-        const msg = `⚡ Teleport to ${tp.name}`;
+        const msg = translate(`⚡ Teleport to ${tp.name}`);
         ctx.font = 'bold 11px Inter, sans-serif';
         const w = ctx.measureText(msg).width + 16;
         ctx.fillRect(tp.x - w / 2, tp.y - 34, w, 20);
@@ -577,7 +578,7 @@ export class HouseCanvasRenderer {
       ctx.fillStyle = isCurrent ? '#38bdf8' : '#ffffff';
       ctx.font = 'bold 11px Inter, sans-serif';
       ctx.textAlign = 'center';
-      ctx.fillText(`Step ${st.step}`, st.x, st.y + 16);
+      ctx.fillText(translate(`Step ${st.step}`), st.x, st.y + 16);
 
       ctx.restore();
     }
@@ -604,7 +605,7 @@ export class HouseCanvasRenderer {
         ctx.fillStyle = 'rgba(15, 23, 42, 0.95)';
         ctx.strokeStyle = '#facc15';
         ctx.lineWidth = 1.5;
-        const text = tag.text;
+        const text = translate(tag.text);
         ctx.font = 'bold 11px Inter, sans-serif';
         const w = ctx.measureText(text).width + 16;
         ctx.fillRect(tag.x - w / 2, tag.y - 38, w, 22);
@@ -662,7 +663,7 @@ export class HouseCanvasRenderer {
         ctx.strokeStyle='#f8fafc';ctx.lineWidth=4;ctx.beginPath();ctx.moveTo(target.x-18,target.y-15);
         ctx.lineTo(target.x+18,target.y-(target.isOpen?35:15));ctx.stroke();
       }
-      ctx.fillStyle='#f8fafc';ctx.font='12px sans-serif';ctx.fillText(label,target.x-20,target.y+30);ctx.restore();
+      ctx.fillStyle='#f8fafc';ctx.font='12px sans-serif';ctx.fillText(translate(label),target.x-20,target.y+30);ctx.restore();
     }
   }
 
@@ -683,7 +684,7 @@ export class HouseCanvasRenderer {
 
         ctx.fillStyle = '#f8fafc';
         ctx.font = 'bold 10px Inter, sans-serif';
-        ctx.fillText(obj.name, obj.x - 20, obj.y + 22);
+        ctx.fillText(translate(obj.name), obj.x - 20, obj.y + 22);
         ctx.restore();
       }
     }
@@ -734,7 +735,7 @@ export class HouseCanvasRenderer {
     ctx.fillStyle = '#ffedd5';
     ctx.font = 'bold 10px Inter, sans-serif';
     ctx.textAlign = 'center';
-    ctx.fillText('🐱 Roaming Cat', cat.x, cat.y - 18);
+    ctx.fillText(translate('🐱 Roaming Cat'), cat.x, cat.y - 18);
   }
 
   renderRobot(ctx) {
@@ -840,10 +841,10 @@ export class HouseCanvasRenderer {
     const trace = robot.traceState;
     const actText = trace?.action ? `⚙️ ${trace.action}` : (robot.vacuumActive ? '⚙️ VACUUM ON' : robot.mopDeployed ? '⚙️ MOPPING' : '⚙️ READY / CRUISING');
     const battText = `🔋 ${Math.round(robot.battery)}%`;
-    const subText = `${actText} • ${battText}`;
+    const subText = translate(`${actText} • ${battText}`);
 
     ctx.font = 'bold 11px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
-    const titleWidth = ctx.measureText('🤖 CLEANING ROBOT').width;
+    const titleWidth = ctx.measureText(translate('🤖 CLEANING ROBOT')).width;
     ctx.font = 'bold 10px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
     const subWidth = ctx.measureText(subText).width;
     const pillW = Math.max(titleWidth, subWidth) + 24;
@@ -873,7 +874,7 @@ export class HouseCanvasRenderer {
     ctx.fillStyle = '#ffffff';
     ctx.font = 'bold 11px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
     ctx.textAlign = 'center';
-    ctx.fillText('🤖 CLEANING ROBOT', robot.x, pillY + 14);
+    ctx.fillText(translate('🤖 CLEANING ROBOT'), robot.x, pillY + 14);
 
     // Subtitle / Action & Battery
     ctx.fillStyle = robot.isStopped ? '#f87171' : robot.isSlow ? '#fbbf24' : '#34d399';
@@ -926,7 +927,7 @@ export class HouseCanvasRenderer {
     ctx.fillStyle = '#bfdbfe';
     ctx.font = 'bold 11px Inter, sans-serif';
     ctx.textAlign = 'center';
-    ctx.fillText('👤 You', avatar.x, avatar.y - 24);
+    ctx.fillText(translate('👤 You'), avatar.x, avatar.y - 24);
   }
 
   renderScreenOverlays(ctx) {
@@ -941,7 +942,7 @@ export class HouseCanvasRenderer {
     if (this.activeStationPrompt) {
       const st = this.activeStationPrompt;
       ctx.save();
-      const msg = `⚡ Press [SPACE] or Click to open ${st.name}`;
+      const msg = translate(`⚡ Press [SPACE] or Click to open ${st.name}`);
       ctx.font = 'bold 13px Inter, sans-serif';
       const tw = ctx.measureText(msg).width + 36;
       const x = (w - tw) / 2;

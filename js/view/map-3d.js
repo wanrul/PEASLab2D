@@ -1,3 +1,4 @@
+import { translate, onLanguageChange } from '../i18n.js';
 /**
  * CollabPEAS - 3D 360-Degree Interactive Apartment Map Engine
  * Powered by Three.js WebGL and Materials/Apartment.glb.
@@ -45,6 +46,10 @@ export class Apartment3DMap {
     this.loadApartmentModel();
     this.bindEvents();
     this.startLoop();
+    onLanguageChange(() => {
+      this.scene.traverse(object => object.userData.repaintLabel?.());
+      this.updateRobotActionSprite(this.lastRobotCaption || '⚙️ READY • 🔋 100%');
+    });
   }
 
   // -------------------------------------------------------------
@@ -358,29 +363,34 @@ export class Apartment3DMap {
     canvas.height = 160;
     const ctx = canvas.getContext('2d');
 
-    // Background pill
-    ctx.fillStyle = 'rgba(255, 255, 255, 0.96)';
-    ctx.strokeStyle = `#${colorHex.toString(16).padStart(6, '0')}`;
-    ctx.lineWidth = 6;
-    ctx.beginPath();
-    ctx.roundRect(16, 16, 480, 128, 28);
-    ctx.fill();
-    ctx.stroke();
+    const paint = () => {
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      // Background pill
+      ctx.fillStyle = 'rgba(255, 255, 255, 0.96)';
+      ctx.strokeStyle = `#${colorHex.toString(16).padStart(6, '0')}`;
+      ctx.lineWidth = 6;
+      ctx.beginPath();
+      ctx.roundRect(16, 16, 480, 128, 28);
+      ctx.fill();
+      ctx.stroke();
 
-    // Icon & Text
-    ctx.font = '54px sans-serif';
-    ctx.textAlign = 'left';
-    ctx.fillText(icon, 36, 102);
+      // Icon & Text
+      ctx.font = '54px sans-serif';
+      ctx.textAlign = 'left';
+      ctx.fillText(icon, 36, 102);
 
-    ctx.fillStyle = '#1e293b';
-    ctx.font = 'bold 36px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
-    ctx.fillText(text, 110, 96);
+      ctx.fillStyle = '#1e293b';
+      ctx.font = 'bold 36px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
+      ctx.fillText(translate(text), 110, 96);
+    };
+    paint();
 
     const texture = new THREE.CanvasTexture(canvas);
     texture.colorSpace = THREE.SRGBColorSpace;
     texture.minFilter = THREE.LinearFilter;
     const spriteMat = new THREE.SpriteMaterial({ map: texture, depthTest: true, depthWrite: false, toneMapped: false });
     const sprite = new THREE.Sprite(spriteMat);
+    sprite.userData.repaintLabel = () => { paint(); texture.needsUpdate = true; };
     sprite.scale.set(2.4, 0.75, 1);
     return sprite;
   }
@@ -520,11 +530,11 @@ export class Apartment3DMap {
     ctx.fillStyle = '#1e293b';
     ctx.font = 'bold 24px -apple-system, sans-serif';
     ctx.textAlign = 'center';
-    ctx.fillText('🤖 CLEANING ROBOT', 220, 42);
+    ctx.fillText(translate('🤖 CLEANING ROBOT'), 220, 42);
 
     ctx.fillStyle = '#166534';
     ctx.font = 'bold 22px -apple-system, sans-serif';
-    ctx.fillText(actionText, 220, 80);
+    ctx.fillText(translate(actionText), 220, 80);
 
     const texture = new THREE.CanvasTexture(canvas);
     texture.colorSpace = THREE.SRGBColorSpace;
@@ -545,6 +555,7 @@ export class Apartment3DMap {
   }
 
   updateRobotActionSprite(text) {
+    this.lastRobotCaption = text;
     if (!this.robotActionSprite) return;
     const { canvas, ctx, texture } = this.robotActionSprite;
     ctx.clearRect(0, 0, canvas.width, canvas.height);
@@ -560,11 +571,11 @@ export class Apartment3DMap {
     ctx.fillStyle = '#1e293b';
     ctx.font = 'bold 24px -apple-system, sans-serif';
     ctx.textAlign = 'center';
-    ctx.fillText('🤖 CLEANING ROBOT', 220, 42);
+    ctx.fillText(translate('🤖 CLEANING ROBOT'), 220, 42);
 
     ctx.fillStyle = '#166534';
     ctx.font = 'bold 22px -apple-system, sans-serif';
-    ctx.fillText(text, 220, 80);
+    ctx.fillText(translate(text), 220, 80);
 
     texture.needsUpdate = true;
   }
@@ -676,15 +687,20 @@ export class Apartment3DMap {
     canvas.width = 2048;
     canvas.height = 96;
     const context = canvas.getContext('2d');
-    context.fillStyle = 'rgba(255,255,255,0.96)';
-    context.fillRect(0, 0, canvas.width, canvas.height);
-    context.font = '30px sans-serif';
-    context.fillStyle = '#854d0e';
-    context.textAlign = 'center';
-    context.fillText(text, 1024, 58, 2000);
+    const paint = () => {
+      context.clearRect(0, 0, canvas.width, canvas.height);
+      context.fillStyle = 'rgba(255,255,255,0.96)';
+      context.fillRect(0, 0, canvas.width, canvas.height);
+      context.font = '30px sans-serif';
+      context.fillStyle = '#854d0e';
+      context.textAlign = 'center';
+      context.fillText(translate(text), 1024, 58, 2000);
+    };
+    paint();
     const texture = new THREE.CanvasTexture(canvas);
     texture.colorSpace = THREE.SRGBColorSpace;
     const label = new THREE.Sprite(new THREE.SpriteMaterial({ map: texture, depthTest: false, toneMapped: false }));
+    label.userData.repaintLabel = () => { paint(); texture.needsUpdate = true; };
     label.scale.set(7.5, 0.35, 1);
     return label;
   }

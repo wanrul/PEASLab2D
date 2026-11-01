@@ -1,3 +1,4 @@
+import { initLanguage } from './i18n.js';
 import { PILOT_STAGES } from './pilot-config.js';
 /**
  * PEASLab2D - Main Application Coordinator (v0.3)
@@ -18,6 +19,7 @@ import { sound } from './view/audio.js';
 import { sessionLogger } from './logging/session-log.js';
 
 window.addEventListener('DOMContentLoaded', () => {
+  initLanguage();
   // 1. Initialize World Model
   const world = new ApartmentWorld();
 

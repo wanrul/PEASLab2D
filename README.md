@@ -67,3 +67,11 @@ Default-apartment authored regressions complete all six cumulative stages with o
 ```bash
 node scripts/extract-apartment-collision.mjs
 ```
+
+## Interface language
+
+Use the bottom-left **中文 / English** buttons at any time, including during a run or Robot POV. English is the initial fallback; the browser remembers the last choice when local storage is available. Switching changes presentation only: it preserves the assembled robot, rules, drafts, selections, simulation and research records. Core PEAS terms, hardware/block names and execution tokens remain English. Participant notes and edited purposes/reflections stay literal; untouched factory purposes can display in Chinese while the model and CSV retain English.
+
+Translations live in `js/i18n-zh.js`; anchored live-feedback templates and reversible DOM updates live in `js/i18n.js`. Add translations when changing authored UI copy, keep user-generated text inside `data-i18n-skip`, and bind factory purpose inputs with their stable stage/task key. Never translate catalogs or simulation state, rebuild an editor on a language switch, or translate raw perception data. Existing 2D draw calls and 3D canvas textures read the current presentation language.
+
+The normal Node suite includes dictionary/catalog coverage and presentation regressions. The optional real-browser regression is `tests/localization.browser.mjs`: start the local server, set `PLAYWRIGHT_MODULE` to an installed Playwright module, optionally set `TEST_URL` and `CHROME_PATH`, then run it with Node. No browser package is added to this project. Its temporary graphics downscale affects that test page only.

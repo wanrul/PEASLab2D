@@ -1,3 +1,4 @@
+import { bindPurposeField, isFactoryPurpose } from '../i18n.js';
 import { appState } from '../state.js';
 import { TASKS_CATALOG } from '../data/tasks.js';
 import { SENSORS_CATALOG } from '../data/sensors.js';
@@ -30,7 +31,11 @@ export class StepsView {
         return `<article class="purpose-task"><h3>${escape(task.icon)} ${escape(task.name)}</h3><label>Purpose<textarea data-task-purpose="${task.id}" rows="2">${escape(purpose.purpose)}</textarea></label><p>Success criterion: ${escape(criterionDescriptions(appState.currentStage).find(c=>c.taskId===task.id)?.label)}</p><fieldset><legend>Task priority</legend>${TASK_PURPOSES[task.id].priorities.map(([id,label])=>`<label><input type="radio" name="priority-${task.id}" data-task-priority="${task.id}" value="${id}" ${purpose.priority===id?'checked':''}> ${escape(label)}</label>`).join('')}</fieldset></article>`;
       }).join('')}</div><p>${criterionDescriptions(appState.currentStage).some(c=>c.id==='speed')?escape(criterionDescriptions(appState.currentStage).find(c=>c.id==='speed').label):'Speed: elapsed duration will be recorded. No time target is set for this stage.'}</p>
       <footer class="step-nav-footer"><span>Choose a task priority for each current task to continue.</span><button id="priorityContinue" class="btn btn-primary">Continue</button></footer></section>`;
-    this.panel.querySelectorAll('[data-task-purpose]').forEach(input=>input.onchange=()=>appState.setTaskPurpose(input.dataset.taskPurpose,input.value));
+    this.panel.querySelectorAll('[data-task-purpose]').forEach(input=>{
+      const taskId=input.dataset.taskPurpose;
+      const readPurpose=bindPurposeField(input,appState.stagePurposes[appState.currentStage][taskId].purpose,TASK_PURPOSES[taskId].purpose,`${appState.currentStage}:${taskId}`);
+      input.onchange=()=>appState.setTaskPurpose(taskId,readPurpose());
+    });
     this.panel.querySelectorAll('[data-task-priority]').forEach(input=>input.onchange=()=>appState.setTaskPriority(input.dataset.taskPriority,input.value));
     this.panel.querySelector('#priorityContinue').onclick=()=>window.navigateStep(2);
     this.updatePurposeGate();
@@ -70,7 +75,7 @@ export class StepsView {
   }
   renderObservations(){
     const log=this.panel?.querySelector('#singleObservationLog');if(!log)return;
-    log.innerHTML=appState.observationLogs.map(e=>`<div class="single-stamp"><strong>${e.stamp}</strong><time>${escape(e.timestamp)} · Stage ${e.stageId}</time><span>${escape(e.comment)}</span></div>`).reverse().join('');
+    log.innerHTML=appState.observationLogs.map(e=>`<div class="single-stamp"><strong>${e.stamp}</strong><time>${escape(e.timestamp)} · Stage ${e.stageId}</time><span data-i18n-skip>${escape(e.comment)}</span></div>`).reverse().join('');
   }
   renderCriteria(criteria=window.simEngine?.criteriaResults,elapsed=window.simEngine?.elapsedSeconds,counters=null) {
     const engine=window.simEngine;
@@ -119,7 +124,7 @@ export class StepsView {
     this.panel.innerHTML=`<section class="v6-step"><h2>Your robot design</h2><dl><dt>Sensors</dt><dd>${escape(catalogNames(appState.installedSensors,SENSORS_CATALOG))||'None'}</dd><dt>Actuators</dt><dd>${escape(catalogNames(appState.installedActuators,ACTUATORS_CATALOG))||'None'}</dd><dt>Revisions</dt><dd>${appState.revisitedSteps.length}</dd></dl>
       ${PILOT_STAGES.filter(stage=>appState.stageResults[stage.id]).map(stage=>{
         const runs=appState.runHistory.filter(run=>run.stageId===stage.id),last=runs.at(-1),result=appState.stageResults[stage.id];
-        return `<article class="stage-summary"><h3>Stage ${stage.id}: ${escape(stage.name)}</h3><p>${result.passingRunId===null?'No recorded passing run.':`Recorded passing run: ${result.passingRunId}.`} ${runs.length} formal runs.</p>${Object.entries(appState.stagePurposes[stage.id]).map(([id,p])=>`<p>${escape(TASKS_CATALOG.find(t=>t.id===id)?.name)}: ${escape(p.purpose)} · Priority: ${escape(TASK_PURPOSES[id].priorities.find(([key])=>key===p.priority)?.[1]||'Not selected')}</p>`).join('')}<p>Latest run: ${last?(last.passed?'all criteria achieved':'criteria unmet'):'No run recorded'}</p>${last?this.renderCriteria(last.criteria,last.elapsedSeconds,last.counters)+this.renderTaskOutcomes(last.outcomes,true):''}<p>${escape(result.closingText)}</p></article>`;
+        return `<article class="stage-summary"><h3>Stage ${stage.id}: ${escape(stage.name)}</h3><p>${result.passingRunId===null?'No recorded passing run.':`Recorded passing run: ${result.passingRunId}.`} ${runs.length} formal runs.</p>${Object.entries(appState.stagePurposes[stage.id]).map(([id,p])=>`<p><span>${escape(TASKS_CATALOG.find(t=>t.id===id)?.name)}</span>: <span ${isFactoryPurpose(p.purpose,TASK_PURPOSES[id].purpose,`${stage.id}:${id}`)?'':'data-i18n-skip'}>${escape(p.purpose)}</span> · <span>Priority:</span> <span>${escape(TASK_PURPOSES[id].priorities.find(([key])=>key===p.priority)?.[1]||'Not selected')}</span></p>`).join('')}<p>Latest run: ${last?(last.passed?'all criteria achieved':'criteria unmet'):'No run recorded'}</p>${last?this.renderCriteria(last.criteria,last.elapsedSeconds,last.counters)+this.renderTaskOutcomes(last.outcomes,true):''}<p data-i18n-skip>${escape(result.closingText)}</p></article>`;
       }).join('')}<button class="btn btn-primary" id="downloadSession">Download log</button></section>`;
     this.panel.querySelector('#downloadSession').onclick=()=>sessionLogger.exportCsv();
   }
