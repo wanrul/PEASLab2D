@@ -48,16 +48,16 @@ test('every module card renders the same neutral fields', () => {
   }
 });
 
-test('sensor editor exposes all fifteen cards and eleven empty physical points', () => {
+test('sensor editor exposes all fifteen cards and the active stage budget of empty points', () => {
   const old = appState.installedSensors;
   appState.installedSensors = new Set();
   const container = { innerHTML: '', querySelectorAll: () => [], querySelector: () => ({}) };
   try {
     renderSensorStep(container);
     assert.equal((container.innerHTML.match(/data-module-id=/g) || []).length, 15);
-    assert.equal((container.innerHTML.match(/data-mount-index=/g) || []).length, 11);
-    assert.match(container.innerHTML, /0 \/ 11 mounted/);
-    assert.match(container.innerHTML, /Up to 11 sensors. No minimum selection/);
+    assert.equal((container.innerHTML.match(/data-mount-index=/g) || []).length, appState.sensorBudget);
+    assert.match(container.innerHTML, new RegExp(`0 / ${appState.sensorBudget} mounted`));
+    assert.match(container.innerHTML, new RegExp(`Up to ${appState.sensorBudget} sensors. No minimum selection`));
     assert.doesNotMatch(container.innerHTML, /mounting-continue" disabled/);
   } finally { appState.installedSensors = old; }
 });
@@ -74,4 +74,9 @@ test('body editor exposes fourteen cards, ten points, and capacity only', () => 
     assert.match(container.innerHTML, /Up to 10 actuators. No minimum selection/);
     assert.ok(!container.innerHTML.includes('mounting-continue" disabled'));
   } finally { appState.installedActuators = old; }
+});
+
+test('Map card shows its local-detection limit in the concise module description',()=>{
+  const map=SENSORS_CATALOG.find(sensor=>sensor.id==='SENSE_07');
+  assert.match(moduleCard(map,'sensor'),/only after detection by mounted local sensors/);
 });

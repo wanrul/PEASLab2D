@@ -1,6 +1,6 @@
 /**
- * CollabPEAS - Complete 64-Block Library
- * SENSE (15, Blue) -> CONDITION (20, Yellow) -> ACTION (23, Green) -> CONTROL (6, Grey)
+ * CollabPEAS - Complete Block Library
+ * SENSE (15, Blue) -> CONDITION (22, Yellow) -> ACTION (26, Green) -> CONTROL (6, Grey)
  * Enforces SENSE -> CONDITION compatibility and ACTION -> Actuator requirements.
  */
 
@@ -13,12 +13,12 @@ export const BLOCK_KINDS = {
 
 export const SENSE_BLOCKS = [
   { id: 'SENSE_01', kind: 'Sense', name: 'Animal Detection Sensor', returns: 'DETECTED / CLEAR', desc: 'Detects the tagged cat within 1.5m.' },
-  { id: 'SENSE_02', kind: 'Sense', name: 'Battery Sensor', returns: 'HIGH / MED / LOW', desc: 'Battery level: HIGH (>60%), MED (30-60%), LOW (<30%).' },
-  { id: 'SENSE_03', kind: 'Sense', name: 'Destination Sensor', returns: 'DIRECTION + DISTANCE', desc: 'Direction + distance to target goal (SINK/BIN/DOCK).' },
+  { id: 'SENSE_02', kind: 'Sense', name: 'Battery Sensor', returns: 'HIGH / MED / LOW', desc: 'LOW below the configured threshold (default 30%); otherwise HIGH above 60% or MED.' },
+  { id: 'SENSE_03', kind: 'Sense', name: 'Destination Sensor', returns: 'DIRECTION + DISTANCE', desc: 'Direction and distance to the learner-selected BIN, TABLE or DOCK; no automatic classification.' },
   { id: 'SENSE_04', kind: 'Sense', name: 'Distance Sensor', returns: 'NEAR / FAR / BLOCKED', desc: 'Nearest obstacle in 4 directions up to 5m.' },
   { id: 'SENSE_05', kind: 'Sense', name: 'Floor Dirt Sensor', returns: 'DIRTY / CLEAN', desc: 'Underfoot cell state: DIRTY / CLEAN.' },
   { id: 'SENSE_06', kind: 'Sense', name: 'Floor Wet Sensor', returns: 'WET / DRY', desc: 'Underfoot cell moisture: WET / DRY.' },
-  { id: 'SENSE_07', kind: 'Sense', name: 'Floor Map Sensor', returns: 'FULL GRID MAP', desc: 'Global grid status: CLEAN/DIRTY/WET/VISITED/UNKNOWN.' },
+  { id: 'SENSE_07', kind: 'Sense', name: 'Floor Map Sensor', returns: 'LAYOUT + OBSERVATIONS', desc: 'Static floor layout and visited coverage; remembers dirt or wet cells only when a mounted local sensor observes them.' },
   { id: 'SENSE_08', kind: 'Sense', name: 'Grip Sensor', returns: 'GRIPPING / EMPTY', desc: 'Arm holding an object: GRIPPING / EMPTY.' },
   { id: 'SENSE_09', kind: 'Sense', name: 'Human Proximity Sensor', returns: 'NEAR / CLEAR', desc: 'Operator avatar within 2m: NEAR / CLEAR.' },
   { id: 'SENSE_10', kind: 'Sense', name: 'Light Level Sensor', returns: 'DARK / DIM / BRIGHT', desc: 'Ambient room lighting in lux.' },
@@ -26,7 +26,7 @@ export const SENSE_BLOCKS = [
   { id: 'SENSE_12', kind: 'Sense', name: 'Session Timer Sensor', returns: 'ELAPSED TIME', desc: 'Elapsed duration of current state in seconds.' },
   { id: 'SENSE_13', kind: 'Sense', name: 'Sound Level Sensor', returns: 'QUIET / LOUD', desc: 'Acoustic decibel level in room.' },
   { id: 'SENSE_14', kind: 'Sense', name: 'Stair Edge Detector', returns: 'EDGE DETECTED / CLEAR', desc: 'Drop-off / cliff detection ahead.' },
-  { id: 'SENSE_15', kind: 'Sense', name: 'Vision Sensor', returns: 'OBJECT TYPE + POS', desc: 'Classifies objects in 120° cone: CUP/FOOD/TRASH/BIN/SINK.' }
+  { id: 'SENSE_15', kind: 'Sense', name: 'Vision Sensor', returns: 'OBJECT TYPE + POS', desc: 'Classifies objects in 120° cone: CUP/FOOD/TRASH; includes a visibly held object.' }
 ];
 
 export const CONDITION_BLOCKS = [
@@ -37,7 +37,7 @@ export const CONDITION_BLOCKS = [
   { id: 'COND_05', kind: 'Condition', name: 'IF floor cell is UNVISITED', requiresSense: ['SENSE_07'], desc: 'Map sensor shows cell as UNVISITED.' },
   { id: 'COND_06', kind: 'Condition', name: 'IF floor cell is CLEAN', requiresSense: ['SENSE_07', 'SENSE_05'], desc: 'Floor cell is already CLEAN.' },
   { id: 'COND_07', kind: 'Condition', name: 'IF animal is DETECTED', requiresSense: ['SENSE_01'], desc: 'Animal sensor returns DETECTED (cat within 1.5m).' },
-  { id: 'COND_08', kind: 'Condition', name: 'IF battery is LOW', requiresSense: ['SENSE_02'], desc: 'Battery sensor reads LOW (<30%).' },
+  { id: 'COND_08', kind: 'Condition', name: 'IF battery is LOW', requiresSense: ['SENSE_02'], desc: 'Battery sensor reads LOW below the configured threshold (default 30%).' },
   { id: 'COND_09', kind: 'Condition', name: 'IF battery is HIGH', requiresSense: ['SENSE_02'], desc: 'Battery sensor reads HIGH (>60%).' },
   { id: 'COND_10', kind: 'Condition', name: 'IF destination is REACHED', requiresSense: ['SENSE_03'], desc: 'Destination sensor distance <= 0.2m.' },
   { id: 'COND_11', kind: 'Condition', name: 'IF destination is FAR', requiresSense: ['SENSE_03'], desc: 'Destination distance > 2m.' },
@@ -49,6 +49,8 @@ export const CONDITION_BLOCKS = [
   { id: 'COND_17', kind: 'Condition', name: 'IF object is BELONGING', requiresSense: ['SENSE_15'], desc: 'Vision classifies targeted item as CUP or FOOD.' },
   { id: 'COND_18', kind: 'Condition', name: 'IF timer EXCEEDS limit', requiresSense: ['SENSE_12'], desc: 'Task state duration > timeout threshold.' },
   { id: 'COND_19', kind: 'Condition', name: 'IF edge is DETECTED', requiresSense: ['SENSE_14'], desc: 'Stair edge sensor flags cliff edge.' },
+  { id: 'COND_21', kind: 'Condition', name: 'IF floor is DRY', requiresSense: ['SENSE_06'], desc: 'Wet sensor reads DRY underfoot.' },
+  { id: 'COND_22', kind: 'Condition', name: 'IF animal is CLEAR', requiresSense: ['SENSE_01'], desc: 'Animal sensor reports no cat within 1.5m.' },
   { id: 'COND_20', kind: 'Condition', name: 'IF weight is DETECTED', requiresSense: ['SENSE_11'], desc: 'Object weight sensor reads > 0g.' }
 ];
 
@@ -75,6 +77,9 @@ export const ACTION_BLOCKS = [
   { id: 'ACT_20', kind: 'Action', name: 'LED FLASH: BLUE', requiresActuator: 'ACTUATOR_LED', desc: 'Pulse chassis light ring Blue (active clean).' },
   { id: 'ACT_21', kind: 'Action', name: 'BIN LID OPEN', requiresActuator: 'ACTUATOR_BIN_OPEN', desc: 'Transmit wireless open command to smart bin.' },
   { id: 'ACT_22', kind: 'Action', name: 'PLAY SOUND: BEEP', requiresActuator: 'ACTUATOR_SPEAKER', desc: 'Emit short acoustic confirmation beep.' },
+  { id: 'ACT_24', kind: 'Action', name: 'SELECT DESTINATION BIN', requiresActuator: null, desc: 'Choose BIN as the navigation goal. Destination sensing and locomotion are still required to travel.' },
+  { id: 'ACT_25', kind: 'Action', name: 'SELECT DESTINATION TABLE', requiresActuator: null, desc: 'Choose TABLE as the navigation goal; the learner decides which objects belong there.' },
+  { id: 'ACT_26', kind: 'Action', name: 'SELECT DESTINATION DOCK', requiresActuator: null, desc: 'Choose DOCK as the navigation goal. Connecting requires the physical dock connector.' },
   { id: 'ACT_23', kind: 'Action', name: 'PLAY SOUND: CHIME', requiresActuator: 'ACTUATOR_SPEAKER', desc: 'Emit harmonic alert chime.' }
 ];
 

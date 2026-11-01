@@ -87,7 +87,7 @@ export const TASKS_CATALOG = [
     id: 'TASK_6',
     name: 'Return to charging dock when battery is low',
     shortName: 'Dock on Low Battery',
-    description: 'When battery drops below 30%, abandon active tasks, navigate directly to the charging dock, and engage docking connector pin.',
+    description: 'When battery drops below the configured LOW threshold (default 30%), abandon active tasks, navigate directly to the charging dock, and engage docking connector pin.',
     primaryDimension: 'Time',
     requiredActuators: ['ACTUATOR_WHEELS', 'ACTUATOR_ROTATION', 'ACTUATOR_DOCK_PIN'],
     requiredModuleNames: ['Wheel Drive', 'Body Rotation', 'Dock Connector Engage'],

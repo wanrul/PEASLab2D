@@ -1,6 +1,5 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { createHash } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { appState } from '../js/state.js';
 import { ApartmentWorld } from '../js/sim/world.js';
@@ -8,6 +7,10 @@ import { SimulationEngine } from '../js/sim/engine.js';
 import { BlockCanvasView } from '../js/view/block-canvas.js';
 import { StepsView } from '../js/view/steps-view.js';
 import { SessionLogger } from '../js/logging/session-log.js';
+import { TASKS_CATALOG } from '../js/data/tasks.js';
+import { SENSORS_CATALOG } from '../js/data/sensors.js';
+import { ACTUATORS_CATALOG } from '../js/data/actuators.js';
+import { ALL_BLOCKS } from '../js/data/blocks.js';
 
 function fixture(t, options) {
   const fresh = new appState.constructor(), saved = {};
@@ -33,8 +36,8 @@ test('stage one gates actual priorities, removes hardware minima, retains capaci
   assert.equal(appState.setStep(2),true); assert.equal(appState.setStep(3),true); assert.equal(appState.setStep(4),true);
   assert.equal(appState.setStep(5),false); author(appState.rules[0],{sense:'SENSE_02',action:'ACT_18'});
   assert.equal(appState.setStep(5),true); assert.equal(appState.setStep(1),true);
-  for(let i=1;i<=11;i++) assert.equal(appState.toggleSensor(`SENSE_${String(i).padStart(2,'0')}`).success,true);
-  assert.equal(appState.toggleSensor('SENSE_12').success,false);
+  for(let i=1;i<=3;i++) assert.equal(appState.toggleSensor(`SENSE_${String(i).padStart(2,'0')}`).success,true);
+  assert.equal(appState.toggleSensor('SENSE_04').success,false);
   for(let i=0;i<10;i++) assert.equal(appState.toggleActuator(`module${i}`).success,true);
   assert.equal(appState.toggleActuator('extra').success,false);
 });
@@ -66,7 +69,7 @@ test('locked rules never arbitrate, queue, count or route; priorities are separa
   assert.equal(appState.setRuleSlot(appState.rules[0].id,'priority','CTRL_03'),false);
   assert.equal(engine.evaluateRules(engine.readSensors()).taskId,'TASK_1');
   Object.assign(world.robot,{x:350,y:470,heading:0}); world.dirtCells=[];
-  engine.drive({mapWet:[{x:350,y:550}],visibleObject:{x:350,y:550},SENSE_03:{target:'BIN',x:350,y:550}});
+  appState.installedSensors.delete('SENSE_07');engine.drive({mapWet:[{x:350,y:550}],visibleObject:{x:350,y:550},SENSE_03:{target:'BIN',x:350,y:550}});
   assert.equal(world.robot.heading,0); assert.equal(engine.taskOutcomes.length,1);
   const view=Object.create(BlockCanvasView.prototype); const control=view.renderPaletteBlocks('Control');
   assert.equal((control.match(/data-block-id=/g)||[]).length,4); assert.doesNotMatch(control,/CTRL_05|CTRL_06/);
@@ -111,7 +114,7 @@ test('stage-aware logs and summaries preserve previous stage outcomes and factua
   for(const event of logger.events){const d=JSON.parse(event.detail);assert.ok([1,2].includes(d.stageId),event.event);assert.ok(Array.isArray(d.taskIds),event.event);}
   assert.ok(logger.events.some(e=>e.event==='STAGE_TRANSITION')); assert.ok(logger.events.some(e=>e.event==='PURPOSE_CHANGED')); assert.ok(logger.events.some(e=>e.event==='TASK_PRIORITY_CHANGED'));
   assert.doesNotMatch(logger.exportCSV(),/scores|weights|composite|Player A|Player B|PlayerID/);
-  const {view,panel}=viewFixture(t,engine);view.showFinalSummaryModal();assert.match(panel.innerHTML,/Stage 1/);assert.match(panel.innerHTML,/Stage 2/);assert.match(panel.innerHTML,/First stage reflection/);assert.doesNotMatch(panel.innerHTML,/Weighted|First run|of 6|score-/);
+  const {view,panel}=viewFixture(t,engine);view.showFinalSummaryModal();assert.match(panel.innerHTML,/Stage 1/);assert.match(panel.innerHTML,/Stage 2/);assert.match(panel.innerHTML,/First stage reflection/);assert.doesNotMatch(panel.innerHTML,/Weighted|First run|score-/);
 });
 
 test('rule-driven stage one cleaning then cumulative stage two sorting preserves cleaning capability', t => {
@@ -122,32 +125,37 @@ test('rule-driven stage one cleaning then cumulative stage two sorting preserves
   author(appState.rules[0],{sense:'SENSE_05',condition:'COND_03',action:'ACT_09'});
   formal(engine);engine.tick();assert.equal(engine.endRun('evaluate').passed,true);assert.equal(appState.continueStage(),true);
   author(appState.rules[1],{sense:'SENSE_15',condition:'COND_16',action:'ACT_13',control:'CTRL_04',secondaryAction:'ACT_14'});
+  author(appState.addRule('TASK_2'),{sense:'SENSE_15',condition:'COND_16',action:'ACT_24',priority:'CTRL_05'});
   const drop=appState.addRule('TASK_2');author(drop,{sense:'SENSE_03',condition:'COND_10',action:'ACT_15',priority:'CTRL_05'});
   formal(engine);let carried=false;for(let i=0;i<150;i++){engine.tick();carried ||= Boolean(world.robot.heldObject);}
   const result=engine.endRun('evaluate');assert.equal(carried,true);assert.equal(world.objects[0].sorted,true);assert.equal(world.dirtCells[0].cleaned,true);assert.equal(result.passed,true);assert.deepEqual(result.tasksCompleted,['TASK_1','TASK_2']);
 });
 
-test('learner screens offer criteria, four edit targets and no numeric score or normal 2D option; catalogs byte-identical', t => {
+test('learner screens offer criteria, four edit targets and no numeric score or normal 2D option; original catalog IDs and names preserved', t => {
   const {engine}=fixture(t);const {view,panel}=viewFixture(t,engine); view.renderStep1();assert.doesNotMatch(panel.innerHTML,/type="range"|weight|All six/); assert.match(panel.innerHTML,/Speed/);
-  view.renderStep5();assert.match(panel.innerHTML,/Observed result/);assert.match(panel.innerHTML,/data-edit-step="1"/);assert.match(panel.innerHTML,/data-edit-step="4"/);assert.doesNotMatch(panel.innerHTML,/score-|of 6/);
+  view.renderStep5();assert.match(panel.innerHTML,/Observed result/);assert.match(panel.innerHTML,/data-edit-step="1"/);assert.match(panel.innerHTML,/data-edit-step="4"/);assert.doesNotMatch(panel.innerHTML,/score-/);
   const html=readFileSync(new URL('../index.html',import.meta.url),'utf8');assert.doesNotMatch(html,/viewMode2DBtn|hudPeasScore|hudCoverageScore|hudSafetyScore|data-score-definition|2D Map/);
-  // Portable source fingerprints: preserve catalogs without depending on local Git history.
-  const fingerprints={tasks:'3d15ba855e4b358c4e1fc826af1afa85f6f264ed2bcc40de0a406376be89648d',sensors:'f9bc32ddd2c5513aa6ba16f111dca043879aff3bffb7caf77410be17a6ef82b4',actuators:'b39774d2e39b88a75b2efc2918935571af4a705f125c237bf6bc652e3d48da10',blocks:'01a9472dec0aa5da42d239201e2633e1cd434da80c884c4bb5c0a5ed52662c0d'};
-  for(const [file,hash] of Object.entries(fingerprints))assert.equal(createHash('sha256').update(readFileSync(new URL(`../js/data/${file}.js`,import.meta.url))).digest('hex'),hash);
+  const originals=JSON.parse(readFileSync(new URL('./fixtures/original-catalog-items.json',import.meta.url),'utf8'));
+  for(const [name,catalog]of Object.entries({tasks:TASKS_CATALOG,sensors:SENSORS_CATALOG,actuators:ACTUATORS_CATALOG,blocks:ALL_BLOCKS}))
+    for(const item of originals[name])assert.ok(catalog.some(current=>current.id===item.id&&current.name===item.name),`${name}: ${item.id} ${item.name}`);
 });
 
 test('default apartment completes cumulative cleaning and all four sorting targets with perception-driven rules', t => {
   const {world,engine}=fixture(t);
-  appState.installedSensors=new Set(['SENSE_05','SENSE_07','SENSE_15','SENSE_03']);
+  appState.installedSensors=new Set(['SENSE_05','SENSE_07']);
   appState.installedActuators=new Set(['ACTUATOR_WHEELS','ACTUATOR_ROTATION','ACTUATOR_VACUUM','ACTUATOR_ARM_EXT','ACTUATOR_GRIP_CLOSE','ACTUATOR_GRIP_OPEN']);
   author(appState.rules[0],{sense:'SENSE_05',condition:'COND_03',action:'ACT_09'});
-  formal(engine);for(let i=0;i<2000&&!world.dirtCells.every(d=>d.cleaned);i++)engine.tick();
+  author(appState.addRule('TASK_1'),{sense:'SENSE_05',condition:'COND_06',action:'ACT_10'});
+  formal(engine);for(let i=0;i<15000&&!world.dirtCells.every(d=>d.cleaned);i++)engine.tick();
   assert.equal(engine.endRun('evaluate').passed,true);assert.equal(appState.continueStage(),true);
-  author(appState.rules[1],{sense:'SENSE_15',action:'ACT_13',control:'CTRL_04',secondaryAction:'ACT_14'});
+  appState.installedSensors.add('SENSE_15');appState.installedSensors.add('SENSE_03');
+  author(appState.rules.find(r=>r.taskId==='TASK_2'),{sense:'SENSE_15',action:'ACT_13',control:'CTRL_04',secondaryAction:'ACT_14'});
   author(appState.addRule('TASK_2'),{sense:'SENSE_03',condition:'COND_10',action:'ACT_15',priority:'CTRL_05'});
+  author(appState.addRule('TASK_2'),{sense:'SENSE_15',condition:'COND_16',action:'ACT_24',priority:'CTRL_05'});
+  author(appState.addRule('TASK_2'),{sense:'SENSE_15',condition:'COND_17',action:'ACT_25',priority:'CTRL_05'});
   formal(engine);
   // Use ordinary battery and physical movement: this proves the actual pilot is feasible.
-  for(let i=0;i<2000&&(!world.objects.every(o=>o.sorted)||!world.dirtCells.every(d=>d.cleaned));i++){engine.tick();assert.equal(world.checkCollision(world.robot.x,world.robot.y,world.robot.radius),false);}
+  for(let i=0;i<15000&&(!world.objects.every(o=>o.sorted)||!world.dirtCells.every(d=>d.cleaned));i++){engine.tick();assert.equal(world.checkCollision(world.robot.x,world.robot.y,world.robot.radius),false);}
   assert.deepEqual(world.objects.map(o=>[o.id,o.sorted]),[['TRASH_1',true],['TRASH_2',true],['CUP_1',true],['FOOD_1',true]]);
   assert.equal(engine.pickups,4);assert.equal(engine.releases,4);assert.ok(world.robot.battery>0);assert.equal(engine.endRun('evaluate').passed,true);
   t.diagnostic(`Default Stage 2 completion: ${engine.tickCount} ticks, battery ${world.robot.battery.toFixed(1)}%.`);

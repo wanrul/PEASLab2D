@@ -49,7 +49,7 @@ export class StepsView {
       <div class="observation-input"><input id="observationNote" maxlength="180" placeholder="Optional note" aria-label="Observation note">${['✓','✗','?'].map(s=>`<button class="btn btn-outline" data-stamp="${s}">${s}</button>`).join('')}</div><div id="singleObservationLog"></div>
       <div class="edit-actions">${[[1,'Purpose'],[2,'Sensors'],[3,'Actuators'],[4,'Logic']].map(([step,label])=>`<button class="btn btn-outline" data-edit-step="${step}">Edit ${label}</button>`).join('')}</div>
       <label for="stageReflection">Stage reflection: What did you change, and what did you observe?</label><textarea id="stageReflection" rows="3">${escape(appState.stageResults[appState.currentStage].closingText)}</textarea>
-      ${appState.currentStage===1?'<p id="stagePassStatus"></p><button class="btn btn-primary" id="continueStage">Continue to next stage</button>':'<button class="btn btn-primary" id="finishSession">Finish & reflect</button>'}</section>`;
+      ${appState.currentStage<PILOT_STAGES.length?'<p id="stagePassStatus"></p><button class="btn btn-primary" id="continueStage">Continue to next stage</button>':'<button class="btn btn-primary" id="finishSession">Finish & reflect</button>'}</section>`;
     this.panel.querySelector('#simPlayBtn').onclick=()=>{const wasRunning=appState.simRunning;engine.start();if(!wasRunning)sound.playEvent?.('run');};
     this.panel.querySelector('#simPauseBtn').onclick=()=>engine.pause();
     this.panel.querySelector('#simResetBtn').onclick=()=>engine.reset();
@@ -59,7 +59,7 @@ export class StepsView {
     this.panel.querySelectorAll('[data-stamp]').forEach(btn=>btn.onclick=()=>{const note=this.panel.querySelector('#observationNote');appState.addObservation(btn.dataset.stamp,note.value);note.value='';});
     this.panel.querySelectorAll('[data-edit-step]').forEach(btn=>btn.onclick=()=>{engine.endRun('revision');window.navigateStep(Number(btn.dataset.editStep));});
     this.panel.querySelector('#stageReflection').onchange=event=>appState.setClosingText(event.target.value);
-    if(appState.currentStage===1) this.panel.querySelector('#continueStage').onclick=()=>{
+    if(appState.currentStage<PILOT_STAGES.length) this.panel.querySelector('#continueStage').onclick=()=>{
       engine.endRun('stage-transition');
       appState.setClosingText(this.panel.querySelector('#stageReflection').value || '');
       if(appState.continueStage()) window.navigateStep(1);
@@ -72,15 +72,18 @@ export class StepsView {
     const log=this.panel?.querySelector('#singleObservationLog');if(!log)return;
     log.innerHTML=appState.observationLogs.map(e=>`<div class="single-stamp"><strong>${e.stamp}</strong><time>${escape(e.timestamp)} · Stage ${e.stageId}</time><span>${escape(e.comment)}</span></div>`).reverse().join('');
   }
-  renderCriteria(criteria=window.simEngine?.criteriaResults,elapsed=window.simEngine?.elapsedSeconds) {
-    return `<table class="criteria-table"><thead><tr><th>Criterion</th><th>Observed result</th><th>Status</th></tr></thead><tbody>${(criteria||[]).map(c=>`<tr data-criterion="${c.id}"><th>${escape(c.label)}</th><td>${escape(c.observed)}</td><td>${escape(c.status)}</td></tr>`).join('')}</tbody></table><p class="elapsed-observation">Elapsed duration: ${Number(elapsed||0).toFixed(1)} seconds</p>`;
+  renderCriteria(criteria=window.simEngine?.criteriaResults,elapsed=window.simEngine?.elapsedSeconds,counters=null) {
+    const engine=window.simEngine;
+    const inspection=counters?.inspectionSeconds ?? (engine?.inspectionTicks||0)/(engine?.tickRateHz||10);
+    const cleanVacuum=counters?.cleanVacuumSeconds ?? (engine?.cleanVacuumTicks||0)/(engine?.tickRateHz||10);
+    return `<table class="criteria-table"><thead><tr><th>Criterion</th><th>Observed result</th><th>Status</th></tr></thead><tbody>${(criteria||[]).map(c=>`<tr data-criterion="${c.id}"><th>${escape(c.label)}</th><td>${escape(c.observed)}</td><td>${escape(c.status)}</td></tr>`).join('')}</tbody></table><p class="elapsed-observation">Elapsed duration: ${Number(elapsed||0).toFixed(1)} seconds</p><p class="tool-observations">Inspection without cleaning tools: ${inspection.toFixed(1)} seconds · Vacuum on clean floor: ${cleanVacuum.toFixed(1)} seconds. These observations have no pass threshold.</p>`;
   }
   updateStep5LiveDashboard(){
     const engine=window.simEngine;
     const table=this.panel?.querySelector('#criterionResults');if(table)table.innerHTML=this.renderCriteria();
     const strip=this.panel?.querySelector('#taskOutcomeStrip');if(strip)strip.innerHTML=this.renderTaskOutcomes();
     const next=this.panel?.querySelector('#continueStage');if(next)next.disabled=!appState.canContinueStage();
-    const pass=this.panel?.querySelector('#stagePassStatus');if(pass)pass.textContent=appState.canContinueStage()?`Stage 1 has a recorded passing run (run ${appState.stageResults[1].passingRunId}). You may continue, or revise and test again.`:'End a formal run that meets all current criteria to unlock Stage 2.';
+    const pass=this.panel?.querySelector('#stagePassStatus');if(pass)pass.textContent=appState.canContinueStage()?`Stage ${appState.currentStage} has a recorded passing run (run ${appState.stageResults[appState.currentStage].passingRunId}). You may continue, or revise and test again.`:`End a formal run that meets all current criteria to unlock Stage ${appState.currentStage+1}.`;
     const trace=this.panel?.querySelector('#runTrace'),t=engine?.lastTrace||engine?.world?.robot?.traceState;
     if(trace&&t) ['sense','decide','act'].forEach((key,i)=>{trace.children[i].querySelector('span').textContent=getBlockById(t[key]||t[{sense:'sense',decide:'condition',act:'action'}[key]])?.name||t[key]||'—';});
   }
@@ -116,7 +119,7 @@ export class StepsView {
     this.panel.innerHTML=`<section class="v6-step"><h2>Your robot design</h2><dl><dt>Sensors</dt><dd>${escape(catalogNames(appState.installedSensors,SENSORS_CATALOG))||'None'}</dd><dt>Actuators</dt><dd>${escape(catalogNames(appState.installedActuators,ACTUATORS_CATALOG))||'None'}</dd><dt>Revisions</dt><dd>${appState.revisitedSteps.length}</dd></dl>
       ${PILOT_STAGES.filter(stage=>appState.stageResults[stage.id]).map(stage=>{
         const runs=appState.runHistory.filter(run=>run.stageId===stage.id),last=runs.at(-1),result=appState.stageResults[stage.id];
-        return `<article class="stage-summary"><h3>Stage ${stage.id}: ${escape(stage.name)}</h3><p>${result.passingRunId===null?'No recorded passing run.':`Recorded passing run: ${result.passingRunId}.`} ${runs.length} formal runs.</p>${Object.entries(appState.stagePurposes[stage.id]).map(([id,p])=>`<p>${escape(TASKS_CATALOG.find(t=>t.id===id)?.name)}: ${escape(p.purpose)} · Priority: ${escape(TASK_PURPOSES[id].priorities.find(([key])=>key===p.priority)?.[1]||'Not selected')}</p>`).join('')}<p>Latest run: ${last?(last.passed?'all criteria achieved':'criteria unmet'):'No run recorded'}</p>${last?this.renderCriteria(last.criteria,last.elapsedSeconds)+this.renderTaskOutcomes(last.outcomes,true):''}<p>${escape(result.closingText)}</p></article>`;
+        return `<article class="stage-summary"><h3>Stage ${stage.id}: ${escape(stage.name)}</h3><p>${result.passingRunId===null?'No recorded passing run.':`Recorded passing run: ${result.passingRunId}.`} ${runs.length} formal runs.</p>${Object.entries(appState.stagePurposes[stage.id]).map(([id,p])=>`<p>${escape(TASKS_CATALOG.find(t=>t.id===id)?.name)}: ${escape(p.purpose)} · Priority: ${escape(TASK_PURPOSES[id].priorities.find(([key])=>key===p.priority)?.[1]||'Not selected')}</p>`).join('')}<p>Latest run: ${last?(last.passed?'all criteria achieved':'criteria unmet'):'No run recorded'}</p>${last?this.renderCriteria(last.criteria,last.elapsedSeconds,last.counters)+this.renderTaskOutcomes(last.outcomes,true):''}<p>${escape(result.closingText)}</p></article>`;
       }).join('')}<button class="btn btn-primary" id="downloadSession">Download log</button></section>`;
     this.panel.querySelector('#downloadSession').onclick=()=>sessionLogger.exportCsv();
   }

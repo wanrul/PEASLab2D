@@ -1,0 +1,406 @@
+{
+  "tasks": [
+    {
+      "id": "TASK_1",
+      "name": "Vacuum the floor"
+    },
+    {
+      "id": "TASK_2",
+      "name": "Pick up and sort scattered objects"
+    },
+    {
+      "id": "TASK_3",
+      "name": "Detect and clean spills"
+    },
+    {
+      "id": "TASK_4",
+      "name": "Detect and avoid the moving cat"
+    },
+    {
+      "id": "TASK_5",
+      "name": "Slow down near participants"
+    },
+    {
+      "id": "TASK_6",
+      "name": "Return to charging dock when battery is low"
+    }
+  ],
+  "sensors": [
+    {
+      "id": "SENSE_01",
+      "name": "Animal Detection Sensor"
+    },
+    {
+      "id": "SENSE_02",
+      "name": "Battery Sensor"
+    },
+    {
+      "id": "SENSE_03",
+      "name": "Destination Sensor"
+    },
+    {
+      "id": "SENSE_04",
+      "name": "Distance Sensor"
+    },
+    {
+      "id": "SENSE_05",
+      "name": "Floor Dirt Sensor"
+    },
+    {
+      "id": "SENSE_06",
+      "name": "Floor Wet Sensor"
+    },
+    {
+      "id": "SENSE_07",
+      "name": "Floor Map Sensor"
+    },
+    {
+      "id": "SENSE_08",
+      "name": "Grip Sensor"
+    },
+    {
+      "id": "SENSE_09",
+      "name": "Human Proximity Sensor"
+    },
+    {
+      "id": "SENSE_10",
+      "name": "Light Level Sensor"
+    },
+    {
+      "id": "SENSE_11",
+      "name": "Object Weight Sensor"
+    },
+    {
+      "id": "SENSE_12",
+      "name": "Session Timer Sensor"
+    },
+    {
+      "id": "SENSE_13",
+      "name": "Sound Level Sensor"
+    },
+    {
+      "id": "SENSE_14",
+      "name": "Stair Edge Detector"
+    },
+    {
+      "id": "SENSE_15",
+      "name": "Vision Sensor (Object Classifier)"
+    }
+  ],
+  "actuators": [
+    {
+      "id": "ACTUATOR_WHEELS",
+      "name": "Wheel Drive"
+    },
+    {
+      "id": "ACTUATOR_ROTATION",
+      "name": "Body Rotation"
+    },
+    {
+      "id": "ACTUATOR_ESTOP",
+      "name": "Emergency Stop"
+    },
+    {
+      "id": "ACTUATOR_VACUUM",
+      "name": "Vacuum Suction"
+    },
+    {
+      "id": "ACTUATOR_MOP",
+      "name": "Mop Pad Deploy / Retract"
+    },
+    {
+      "id": "ACTUATOR_ARM_EXT",
+      "name": "Arm Extend"
+    },
+    {
+      "id": "ACTUATOR_GRIP_CLOSE",
+      "name": "Gripper Close (Grab)"
+    },
+    {
+      "id": "ACTUATOR_GRIP_OPEN",
+      "name": "Gripper Open (Release)"
+    },
+    {
+      "id": "ACTUATOR_ARM_RET",
+      "name": "Arm Retract"
+    },
+    {
+      "id": "ACTUATOR_DOCK_PIN",
+      "name": "Dock Connector Engage"
+    },
+    {
+      "id": "ACTUATOR_LED",
+      "name": "LED Body Flash"
+    },
+    {
+      "id": "ACTUATOR_BIN_OPEN",
+      "name": "Bin Lid Open"
+    },
+    {
+      "id": "ACTUATOR_SPEAKER",
+      "name": "Speaker / Voice Output"
+    },
+    {
+      "id": "ACTUATOR_SPEED_CTRL",
+      "name": "Arm Speed Control"
+    }
+  ],
+  "blocks": [
+    {
+      "id": "SENSE_01",
+      "name": "Animal Detection Sensor"
+    },
+    {
+      "id": "SENSE_02",
+      "name": "Battery Sensor"
+    },
+    {
+      "id": "SENSE_03",
+      "name": "Destination Sensor"
+    },
+    {
+      "id": "SENSE_04",
+      "name": "Distance Sensor"
+    },
+    {
+      "id": "SENSE_05",
+      "name": "Floor Dirt Sensor"
+    },
+    {
+      "id": "SENSE_06",
+      "name": "Floor Wet Sensor"
+    },
+    {
+      "id": "SENSE_07",
+      "name": "Floor Map Sensor"
+    },
+    {
+      "id": "SENSE_08",
+      "name": "Grip Sensor"
+    },
+    {
+      "id": "SENSE_09",
+      "name": "Human Proximity Sensor"
+    },
+    {
+      "id": "SENSE_10",
+      "name": "Light Level Sensor"
+    },
+    {
+      "id": "SENSE_11",
+      "name": "Object Weight Sensor"
+    },
+    {
+      "id": "SENSE_12",
+      "name": "Session Timer Sensor"
+    },
+    {
+      "id": "SENSE_13",
+      "name": "Sound Level Sensor"
+    },
+    {
+      "id": "SENSE_14",
+      "name": "Stair Edge Detector"
+    },
+    {
+      "id": "SENSE_15",
+      "name": "Vision Sensor"
+    },
+    {
+      "id": "COND_01",
+      "name": "IF obstacle is NEAR"
+    },
+    {
+      "id": "COND_02",
+      "name": "IF obstacle is BLOCKED"
+    },
+    {
+      "id": "COND_03",
+      "name": "IF floor is DIRTY"
+    },
+    {
+      "id": "COND_04",
+      "name": "IF floor is WET"
+    },
+    {
+      "id": "COND_05",
+      "name": "IF floor cell is UNVISITED"
+    },
+    {
+      "id": "COND_06",
+      "name": "IF floor cell is CLEAN"
+    },
+    {
+      "id": "COND_07",
+      "name": "IF animal is DETECTED"
+    },
+    {
+      "id": "COND_08",
+      "name": "IF battery is LOW"
+    },
+    {
+      "id": "COND_09",
+      "name": "IF battery is HIGH"
+    },
+    {
+      "id": "COND_10",
+      "name": "IF destination is REACHED"
+    },
+    {
+      "id": "COND_11",
+      "name": "IF destination is FAR"
+    },
+    {
+      "id": "COND_12",
+      "name": "IF person is NEAR"
+    },
+    {
+      "id": "COND_13",
+      "name": "IF person is CLEAR"
+    },
+    {
+      "id": "COND_14",
+      "name": "IF arm is GRIPPING"
+    },
+    {
+      "id": "COND_15",
+      "name": "IF arm is EMPTY"
+    },
+    {
+      "id": "COND_16",
+      "name": "IF object is TRASH"
+    },
+    {
+      "id": "COND_17",
+      "name": "IF object is BELONGING"
+    },
+    {
+      "id": "COND_18",
+      "name": "IF timer EXCEEDS limit"
+    },
+    {
+      "id": "COND_19",
+      "name": "IF edge is DETECTED"
+    },
+    {
+      "id": "COND_20",
+      "name": "IF weight is DETECTED"
+    },
+    {
+      "id": "ACT_01",
+      "name": "MOVE FORWARD"
+    },
+    {
+      "id": "ACT_02",
+      "name": "MOVE BACKWARD"
+    },
+    {
+      "id": "ACT_03",
+      "name": "ROTATE LEFT 90\u00b0"
+    },
+    {
+      "id": "ACT_04",
+      "name": "ROTATE RIGHT 90\u00b0"
+    },
+    {
+      "id": "ACT_05",
+      "name": "ROTATE 180\u00b0"
+    },
+    {
+      "id": "ACT_06",
+      "name": "EMERGENCY STOP"
+    },
+    {
+      "id": "ACT_07",
+      "name": "SET SPEED: SLOW"
+    },
+    {
+      "id": "ACT_08",
+      "name": "SET SPEED: NORMAL"
+    },
+    {
+      "id": "ACT_09",
+      "name": "VACUUM ON"
+    },
+    {
+      "id": "ACT_10",
+      "name": "VACUUM OFF"
+    },
+    {
+      "id": "ACT_11",
+      "name": "MOP DEPLOY"
+    },
+    {
+      "id": "ACT_12",
+      "name": "MOP RETRACT"
+    },
+    {
+      "id": "ACT_13",
+      "name": "ARM EXTEND"
+    },
+    {
+      "id": "ACT_14",
+      "name": "GRIPPER CLOSE"
+    },
+    {
+      "id": "ACT_15",
+      "name": "GRIPPER OPEN"
+    },
+    {
+      "id": "ACT_16",
+      "name": "ARM RETRACT"
+    },
+    {
+      "id": "ACT_17",
+      "name": "DOCK CONNECTOR ENGAGE"
+    },
+    {
+      "id": "ACT_18",
+      "name": "LED FLASH: RED"
+    },
+    {
+      "id": "ACT_19",
+      "name": "LED FLASH: AMBER"
+    },
+    {
+      "id": "ACT_20",
+      "name": "LED FLASH: BLUE"
+    },
+    {
+      "id": "ACT_21",
+      "name": "BIN LID OPEN"
+    },
+    {
+      "id": "ACT_22",
+      "name": "PLAY SOUND: BEEP"
+    },
+    {
+      "id": "ACT_23",
+      "name": "PLAY SOUND: CHIME"
+    },
+    {
+      "id": "CTRL_01",
+      "name": "REPEAT UNTIL done"
+    },
+    {
+      "id": "CTRL_02",
+      "name": "REPEAT WHILE true"
+    },
+    {
+      "id": "CTRL_03",
+      "name": "WAIT 2 seconds"
+    },
+    {
+      "id": "CTRL_04",
+      "name": "THEN (sequence)"
+    },
+    {
+      "id": "CTRL_05",
+      "name": "PRIORITY: HIGH"
+    },
+    {
+      "id": "CTRL_06",
+      "name": "PRIORITY: NORMAL"
+    }
+  ]
+}

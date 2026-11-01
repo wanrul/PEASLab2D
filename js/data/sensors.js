@@ -1,7 +1,7 @@
 /**
  * CollabPEAS - Sensors Catalog
  * 15 sensors total: 11 required/relevant for the 6 tasks, 4 distractors.
- * Robot has a physical capacity of 11 mounting slots (min 8 required).
+ * Robot has 11 physical slots; stage-specific budgets apply, with no minimum.
  */
 
 export const MAX_SENSOR_SLOTS = 11;
@@ -27,7 +27,7 @@ export const SENSORS_CATALOG = [
     name: 'Battery Sensor',
     shortName: 'Battery Sensor',
     type: 'Internal Power',
-    measures: 'Current battery level as percentage: HIGH (>60%), MED (30-60%), LOW (<30%).',
+    measures: 'LOW below the researcher-configured threshold (default 30%); otherwise HIGH above 60% and MED at lower levels.',
     misses: 'Time remaining at current drain rate; distance to charging dock.',
     returns: 'HIGH / MED / LOW',
     bodyModule: 'Pulsing LED battery bar (Chest)',
@@ -41,7 +41,7 @@ export const SENSORS_CATALOG = [
     name: 'Destination Sensor',
     shortName: 'Destination Sensor',
     type: 'Navigation',
-    measures: 'Direction and distance to a tagged target goal (SINK, BIN, or DOCK).',
+    measures: 'Direction and distance to the learner-selected BIN, TABLE or DOCK.',
     misses: 'Whether destination is reachable; intervening obstacles or walls.',
     returns: 'DIRECTION + DISTANCE',
     bodyModule: 'Directional head arrow pointer',
@@ -97,9 +97,9 @@ export const SENSORS_CATALOG = [
     name: 'Floor Map Sensor',
     shortName: 'Floor Map Sensor',
     type: 'Spatial SLAM',
-    measures: 'Full spatial state of every apartment cell: CLEAN / DIRTY / WET / VISITED / UNKNOWN.',
-    misses: 'Dynamic moving objects; future state changes.',
-    returns: 'FULL GRID MAP',
+    measures: 'Static floor layout and visited coverage; records dirt and wet cells only after detection by mounted local sensors.',
+    misses: 'Unseen dirt and wet cells, dynamic moving objects and future state changes.',
+    returns: 'LAYOUT + OBSERVATIONS',
     bodyModule: 'Central SLAM processor module (Chassis Top)',
     mountLocation: 'Chassis Top',
     isDistractor: false,
@@ -209,7 +209,7 @@ export const SENSORS_CATALOG = [
     name: 'Vision Sensor (Object Classifier)',
     shortName: 'Vision Classifier',
     type: 'AI Computer Vision',
-    measures: 'Identifies tagged objects in a 120° forward cone: CUP, FOOD, TRASH, BIN, SINK.',
+    measures: 'Identifies objects within a bounded 120° forward cone, including the object visibly held ahead of its own gripper: CUP, FOOD or TRASH.',
     misses: 'Objects outside 120° cone, occluded objects behind furniture, untagged items.',
     returns: 'OBJECT TYPE + POSITION',
     bodyModule: 'Dual stereoscopic optical camera eyes with blinking HUD',

@@ -84,7 +84,7 @@ class StateManager {
 
   canContinue(step = this.currentStep) {
     if (step === 1) return this.selectedTasks.every(id => Boolean(this.stagePurposes[this.currentStage]?.[id]?.priority));
-    if (step === 2) return this.installedSensors.size <= 11;
+    if (step === 2) return this.installedSensors.size <= this.sensorBudget;
     if (step === 3) return this.installedActuators.size <= 10;
     if (step === 4) return this.getUnlockedRules().some(rule => rule.slots.sense && rule.slots.action);
     return step === 5;
@@ -141,8 +141,10 @@ class StateManager {
 
   getUnlockedRules() { return this.rules.filter(rule => this.selectedTasks.includes(rule.taskId)); }
 
+  get sensorBudget() { return PILOT_STAGES[this.currentStage - 1].sensorBudget; }
+
   getConfiguration() {
-    return { stageId: this.currentStage, taskIds: [...this.selectedTasks], purposes: structuredClone(this.stagePurposes[this.currentStage]),
+    return { stageId: this.currentStage, sensorBudget: this.sensorBudget, taskIds: [...this.selectedTasks], purposes: structuredClone(this.stagePurposes[this.currentStage]),
       sensors: [...this.installedSensors], actuators: [...this.installedActuators], rules: structuredClone(this.getUnlockedRules()) };
   }
 
@@ -208,8 +210,9 @@ class StateManager {
     if (isInstalled) {
       this.installedSensors.delete(sensorId);
     } else {
-      if (this.installedSensors.size >= 11) {
-        return { success: false, reason: 'Robot chassis is at maximum capacity (11 sensors).' };
+      if (this.installedSensors.size >= this.sensorBudget) {
+        this.record('SENSOR_REJECTED', sensorId, { budget: this.sensorBudget, installed: [...this.installedSensors] });
+        return { success: false, reason: `Stage ${this.currentStage} allows up to ${this.sensorBudget} sensors. Remove or replace a mounted sensor.` };
       }
       this.installedSensors.add(sensorId);
     }

@@ -7,7 +7,7 @@
 import { appState } from '../state.js';
 import { ACTION_BLOCKS, CONDITION_BLOCKS, SENSE_BLOCKS } from '../data/blocks.js';
 import { sound } from '../view/audio.js';
-import { STAGE_CRITERIA, criterionDescriptions } from '../pilot-config.js';
+import { STAGE_CRITERIA, SIMULATION_SETTINGS, criterionDescriptions } from '../pilot-config.js';
 
 // Private legacy diagnostics only. Active pilot criteria are in pilot-config.js.
 export const SCORE_CONSTANTS = Object.freeze({ dirtShare: 0.7, objectShare: 0.3, catPenalty: 8, humanPenalty: 5, liquidPenalty: 25, runLimitSeconds: 120, waitTicks: 20 });
@@ -20,9 +20,10 @@ export const scoreDefinitions = Object.freeze({
 });
 
 export class SimulationEngine {
-  constructor(world, { runLimitSeconds = SCORE_CONSTANTS.runLimitSeconds, criteria = STAGE_CRITERIA } = {}) {
+  constructor(world, { runLimitSeconds = SCORE_CONSTANTS.runLimitSeconds, criteria = STAGE_CRITERIA, simulationSettings = SIMULATION_SETTINGS } = {}) {
     this.world = world;
     this.criteria = criteria;
+    this.simulationSettings = { ...SIMULATION_SETTINGS, ...simulationSettings };
     this.runLimitSeconds = runLimitSeconds;
     this.scoreDefinitions = { ...scoreDefinitions, time: `100 within ${runLimitSeconds} simulation seconds; minus 100 × overtime / ${runLimitSeconds} afterward. Provisional, uncalibrated pilot limit.` };
     this.runId = 0;
@@ -49,6 +50,7 @@ export class SimulationEngine {
     this.catResponses = 0;
     this.humanResponses = 0;
     this.movingTicks = 0;
+    this.previousMoving = false;
     this.encounters = { cat: false, human: false, catViolation: false, humanViolation: false, catResponse: false, humanResponse: false, wet: [] };
     this.ruleRuntime = {};
     this.pendingThen = [];
@@ -65,8 +67,24 @@ export class SimulationEngine {
     this.reflectionShown = false;
     this.reflexTicks = 0;
     this.navigationGrid = null;
+    this.coverageGrid = null;
     this.navigationRoute = null;
     this.perceivedObjects = new Map();
+    this.perceivedDirt = new Map();
+    this.perceivedWet = new Map();
+    this.coverageVisited = new Set();
+    this.enteredCells = new Set();
+    this.explorationTarget = null;
+    this.selectedGoal = null;
+    this.goalSelections = [];
+    this.lowBatteryEncounter = false;
+    this.lowBatteryGoalSelected = false;
+    this.lowBatteryTravelTicks = 0;
+    this.humanResumes = 0;
+    this.humanResumePending = false;
+    this.humanNearSpeeds = [];
+    this.cleanVacuumTicks = 0;
+    this.inspectionTicks = 0;
     this.tickStart = null;
     this.explicitMotion = false;
     this.finalOutcomes = false;
@@ -89,7 +107,7 @@ export class SimulationEngine {
       this.runConfiguration = appState.getConfiguration();
       this.runBaseline = { ...this.scores }; // Private legacy diagnostic only.
       this.clearReflection();
-      appState.record('RUN_STARTED', String(this.runId), { runId: this.runId, configuration: this.runConfiguration, criteria: { ...this.criteria[this.runStageId] } }, 5);
+      appState.record('RUN_STARTED', String(this.runId), { runId: this.runId, configuration: this.runConfiguration, criteria: { ...this.criteria[this.runStageId] }, simulationSettings:{...this.simulationSettings} }, 5);
     }
     appState.simRunning = true;
     const intervalMs = 1000 / (this.tickRateHz * appState.simSpeed);
@@ -162,12 +180,18 @@ export class SimulationEngine {
     const tasksCompleted = this.taskOutcomes.filter(t => t.status === 'done').map(t => t.taskId);
     const snapshot = { runId: this.runId, stageId: this.runStageId, taskIds: [...appState.selectedTasks],
       passed: this.criteriaResults.every(criterion => criterion.status === 'Achieved'),
-      criteria: structuredClone(this.criteriaResults), criteriaSettings: { ...this.criteria[this.runStageId] },
+      criteria: structuredClone(this.criteriaResults), criteriaSettings: { ...this.criteria[this.runStageId] }, simulationSettings:{...this.simulationSettings},
       configuration: structuredClone(this.runConfiguration), tasksCompleted,
       outcomes: structuredClone(this.taskOutcomes), tick: this.tickCount, reason,
       counters: { dirtCleaned: this.world.dirtCells.filter(d=>d.cleaned).length, dirtTotal: this.world.dirtCells.length,
         ...(appState.selectedTasks.includes('TASK_2') ? { objectsSorted: this.world.objects.filter(o=>o.sorted).length, objectsTotal: this.world.objects.length, pickups: this.pickups, releases: this.releases, wrongReleases: this.wrongReleases } : {}),
-        catNearMisses: this.catSafetyViolations, fastPersonPasses: this.humanSafetyViolations, vacuumSpillEvents: this.vacuumLiquidMistakes },
+        catNearMisses: this.catSafetyViolations, fastPersonPasses: this.humanSafetyViolations, vacuumSpillEvents: this.vacuumLiquidMistakes,
+        spillsMopped:this.world.wetCells.filter(w=>w.cleaned).length,spillsTotal:this.world.wetCells.length,
+        inspectionSeconds:this.inspectionTicks/this.tickRateHz,cleanVacuumSeconds:this.cleanVacuumTicks/this.tickRateHz,
+        catEncounters:this.catOpportunities,catStops:this.catResponses,humanEncounters:this.humanOpportunities,humanSlowResponses:this.humanResponses,humanResumes:this.humanResumes,
+        humanNearSpeeds:[...new Set(this.humanNearSpeeds)],dockedAtBattery:this.dockedAtBattery,lowBatteryEncounter:this.lowBatteryEncounter,lowBatteryTravelTicks:this.lowBatteryTravelTicks },
+      sensingMemory:{dirt:[...this.perceivedDirt.values()],wet:[...this.perceivedWet.values()],objects:[...this.perceivedObjects.values()],coverage:[...this.coverageVisited],enteredCells:[...this.enteredCells]},
+      goalSelections:structuredClone(this.goalSelections),
       elapsedSeconds: this.elapsedSeconds, durationMs: this.elapsedSeconds * 1000 };
     appState.retainRun(snapshot);
     appState.record('RUN_ENDED', String(this.runId), snapshot, 5);
@@ -214,6 +238,7 @@ export class SimulationEngine {
     this.updateCat();
     const percepts = this.readSensors();
     const decision = this.evaluateRules(percepts);
+    if (appState.installedSensors.has('SENSE_07')) this.observeCoverage();
     this.activeRuleFired = decision;
     if (decision) {
       const executed = this.executeAction(decision);
@@ -245,7 +270,7 @@ export class SimulationEngine {
 
     if (dist < 10) {
       cat.state = 'pause';
-      cat.pauseTimer = Math.floor(Math.random() * 20) + 15; // 1.5 - 3.5s pause
+      cat.pauseTimer = this.simulationSettings.catDwellTicks; // Deterministic 2.5-second dwell for comparable pilot resets.
     } else {
       cat.heading = Math.atan2(dy, dx);
       const move = this.world.resolveMove(cat.x,cat.y,Math.cos(cat.heading)*cat.speed,Math.sin(cat.heading)*cat.speed,cat.radius);
@@ -274,14 +299,14 @@ export class SimulationEngine {
 
     // SENSE_02: Battery Sensor
     if (installed.has('SENSE_02')) {
-      if (robot.battery > 60) percepts.SENSE_02 = 'HIGH';
-      else if (robot.battery >= 30) percepts.SENSE_02 = 'MED';
-      else percepts.SENSE_02 = 'LOW';
+      if (robot.battery < this.lowBatteryPercent) percepts.SENSE_02 = 'LOW';
+      else if (robot.battery > 60) percepts.SENSE_02 = 'HIGH';
+      else percepts.SENSE_02 = 'MED';
     } else {
       percepts.SENSE_02 = 'NOT_INSTALLED';
     }
 
-    // SENSE_03: Destination Sensor (SINK/BIN/DOCK)
+    // SENSE_03: Destination Sensor (learner-selected BIN/TABLE/DOCK)
     if (installed.has('SENSE_03')) {
       const destination = this.destination();
       const distance = destination ? Math.hypot(robot.x - destination.x, robot.y - destination.y) : null;
@@ -305,6 +330,9 @@ export class SimulationEngine {
     if (installed.has('SENSE_05')) {
       const onDirt = this.world.dirtCells.some(d => !d.cleaned && Math.hypot(robot.x - d.x, robot.y - d.y) < d.radius + 10);
       percepts.SENSE_05 = onDirt ? 'DIRTY' : 'CLEAN';
+      if (installed.has('SENSE_07')) for (const d of this.world.dirtCells) {
+        if (Math.hypot(robot.x-d.x,robot.y-d.y)<d.radius+10) this.perceivedDirt.set(d.id,{id:d.id,x:d.x,y:d.y,radius:d.radius,cleaned:d.cleaned});
+      }
     } else {
       percepts.SENSE_05 = 'NOT_INSTALLED';
     }
@@ -313,15 +341,21 @@ export class SimulationEngine {
     if (installed.has('SENSE_06')) {
       const onWet = this.world.wetCells.some(w => !w.cleaned && Math.hypot(robot.x - w.x, robot.y - w.y) < w.radius + 10);
       percepts.SENSE_06 = onWet ? 'WET' : 'DRY';
+      if (installed.has('SENSE_07')) for (const w of this.world.wetCells) {
+        if (Math.hypot(robot.x-w.x,robot.y-w.y)<w.radius+10) this.perceivedWet.set(w.id,{id:w.id,x:w.x,y:w.y,radius:w.radius,cleaned:w.cleaned});
+      }
     } else {
       percepts.SENSE_06 = 'NOT_INSTALLED';
     }
 
     // SENSE_07: Floor Map Sensor
     if (installed.has('SENSE_07')) {
-      percepts.SENSE_07 = 'FULL_MAP_ONLINE';
-      percepts.mapDirt = this.world.dirtCells.filter(d => !d.cleaned);
-      percepts.mapWet = this.world.wetCells.filter(w => !w.cleaned);
+      percepts.SENSE_07 = 'LAYOUT_AND_OBSERVATIONS';
+      // Static geometry supports coverage; task-cell coordinates require a mounted local channel.
+      percepts.mapCellUnvisited = !this.enteredCells.has(this.currentCoverageCell());
+      percepts.mapCoverage = [...this.coverageVisited];
+      if (installed.has('SENSE_05')) percepts.mapDirt = [...this.perceivedDirt.values()].filter(d=>!d.cleaned);
+      if (installed.has('SENSE_06')) percepts.mapWet = [...this.perceivedWet.values()].filter(w=>!w.cleaned);
     } else {
       percepts.SENSE_07 = 'NOT_INSTALLED';
     }
@@ -381,7 +415,7 @@ export class SimulationEngine {
         while (diff > Math.PI) diff = Math.abs(diff - 2 * Math.PI);
         return diff <= (Math.PI / 3); // 60 deg each side = 120 deg
       }).sort((a,b) => Math.hypot(a.x-robot.x,a.y-robot.y)-Math.hypot(b.x-robot.x,b.y-robot.y))[0];
-      percepts.SENSE_15 = visible ? visible.type : 'NONE';
+      percepts.SENSE_15 = robot.heldObject?.type || visible?.type || 'NONE';
       percepts.visibleObject = visible;
       if (appState.selectedTasks.includes('TASK_2')) {
         if (visible) this.perceivedObjects.set(visible.id, { id:visible.id, x:visible.x, y:visible.y, type:visible.type });
@@ -410,10 +444,16 @@ export class SimulationEngine {
   }
 
   destination() {
-    if (appState.selectedTasks.includes('TASK_6') && this.dockRequested) return { ...this.world.dock, target: 'DOCK' };
-    const obj = this.world.robot.heldObject;
-    if (appState.selectedTasks.includes('TASK_2') && obj) return { ...(obj.type === 'TRASH' ? this.world.smartBin : this.world.depositTable), target: obj.type === 'TRASH' ? 'BIN' : 'SINK' };
-    return null;
+    const stations = { BIN: this.world.smartBin, TABLE: this.world.depositTable, DOCK: this.world.dock };
+    return stations[this.selectedGoal] ? { ...stations[this.selectedGoal], target: this.selectedGoal } : null;
+  }
+
+  actionAlreadySatisfied(action) {
+    const r=this.world.robot;
+    return ({ ACT_07:r.isSlow, ACT_08:!r.isSlow, ACT_09:r.vacuumActive, ACT_10:!r.vacuumActive,
+      ACT_11:r.mopDeployed, ACT_12:!r.mopDeployed, ACT_13:r.armExtended, ACT_16:!r.armExtended, ACT_14:Boolean(r.heldObject), ACT_15:!r.heldObject && !r.gripperClosed,
+      ACT_17:r.isDocked, ACT_24:this.selectedGoal==='BIN', ACT_25:this.selectedGoal==='TABLE', ACT_26:this.selectedGoal==='DOCK'
+    })[action] || false;
   }
 
   conditionPassed(sense, condition, p) {
@@ -422,15 +462,16 @@ export class SimulationEngine {
     return ({
       COND_01: p.SENSE_04 === 'NEAR', COND_02: p.SENSE_04 === 'BLOCKED',
       COND_03: p.SENSE_05 === 'DIRTY', COND_04: p.SENSE_06 === 'WET',
-      COND_05: !this.world.robot.pathTrail.some(pt => Math.hypot(pt.x-this.world.robot.x,pt.y-this.world.robot.y)<10),
-      COND_06: sense === 'SENSE_05' ? p.SENSE_05 === 'CLEAN' : !p.mapDirt?.some(d => Math.hypot(d.x-this.world.robot.x,d.y-this.world.robot.y)<d.radius+10),
+      COND_05: p.mapCellUnvisited === true,
+      COND_06: sense === 'SENSE_05' ? p.SENSE_05 === 'CLEAN' : appState.installedSensors.has('SENSE_05') && p.SENSE_05 === 'CLEAN',
       COND_07: p.SENSE_01 === 'DETECTED', COND_08: p.SENSE_02 === 'LOW', COND_09: p.SENSE_02 === 'HIGH',
       COND_10: p.SENSE_03?.reached, COND_11: p.SENSE_03?.far,
       COND_12: p.SENSE_09 === 'NEAR', COND_13: p.SENSE_09 === 'CLEAR',
       COND_14: p.SENSE_08 === 'GRIPPING', COND_15: p.SENSE_08 === 'EMPTY',
       COND_16: p.SENSE_15 === 'TRASH', COND_17: ['CUP','FOOD'].includes(p.SENSE_15),
       COND_18: Number.isFinite(this.criteria[appState.currentStage].speedLimitSeconds) && Number(p.SENSE_12) > this.criteria[appState.currentStage].speedLimitSeconds,
-      COND_19: p.SENSE_14 === 'EDGE DETECTED', COND_20: typeof p.SENSE_11 === 'number' && p.SENSE_11 > 0
+      COND_19: p.SENSE_14 === 'EDGE DETECTED', COND_20: typeof p.SENSE_11 === 'number' && p.SENSE_11 > 0,
+      COND_21: p.SENSE_06 === 'DRY', COND_22: p.SENSE_01 === 'CLEAR'
     })[condition] || false;
   }
 
@@ -453,6 +494,9 @@ export class SimulationEngine {
         continue;
       }
       if (!this.conditionPassed(sense,condition,percepts)) { delete this.ruleRuntime[rule.id]; continue; }
+      // A setting yields when it and its optional THEN are satisfied. Repeated STOP
+      // remains active; queued THEN keeps its original priority and next-tick order.
+      if (this.actionAlreadySatisfied(action) && (!rule.slots.secondaryAction || this.actionAlreadySatisfied(rule.slots.secondaryAction))) continue;
       const signature = JSON.stringify(rule.slots);
       if (this.ruleRuntime[rule.id]?.signature !== signature) this.ruleRuntime[rule.id] = { signature, since: this.tickCount };
       if (control === 'CTRL_03' && this.tickCount-this.ruleRuntime[rule.id].since < SCORE_CONSTANTS.waitTicks) {
@@ -487,7 +531,7 @@ export class SimulationEngine {
     }
     const required = ACTION_BLOCKS.find(b=>b.id===act)?.requiresActuator;
     const missingDrive = ['ACT_01','ACT_02'].includes(act) && !appState.installedActuators.has('ACTUATOR_ROTATION');
-    if (!required || !appState.installedActuators.has(required) || missingDrive) {
+    if ((!required && !['ACT_24','ACT_25','ACT_26'].includes(act)) || (required && !appState.installedActuators.has(required)) || missingDrive) {
       this.lastTrace.act = `${ACTION_BLOCKS.find(b=>b.id===act)?.name || act} — no actuator`;
       return false;
     }
@@ -529,17 +573,28 @@ export class SimulationEngine {
             this.perceivedObjects.set(obj.id, { id:obj.id, x:obj.x, y:obj.y, type:obj.type });
           }
           robot.heldObject=null;
+          this.selectedGoal=null;
         }
         break;
       }
       case 'ACT_16': robot.armExtended=false; break;
       case 'ACT_17':
-        this.dockRequested=true;
         if (Math.hypot(robot.x-this.world.dock.x,robot.y-this.world.dock.y)<30 && robot.battery>0) {
           this.dockedAtBattery ??= robot.battery;
           robot.isDocked=true; robot.isCharging=true;
         }
         break;
+      case 'ACT_24':
+      case 'ACT_25':
+      case 'ACT_26': {
+        this.selectedGoal = {ACT_24:'BIN',ACT_25:'TABLE',ACT_26:'DOCK'}[act];
+        this.goalSelections.push({tick:this.tickCount,goal:this.selectedGoal,battery:robot.battery});
+        if (this.selectedGoal==='DOCK') {
+          this.dockRequested=true;
+          if (this.lowBatteryEncounter) this.lowBatteryGoalSelected=true;
+        }
+        break;
+      }
       case 'ACT_18': robot.ledColor='rgba(239, 68, 68, 0.95)'; break;
       case 'ACT_19': robot.ledColor='rgba(245, 158, 11, 0.95)'; break;
       case 'ACT_20': robot.ledColor='rgba(59, 130, 246, 0.95)'; break;
@@ -570,15 +625,19 @@ export class SimulationEngine {
     const r = this.world.robot;
     if (!this.canDrive() || r.isStopped || this.explicitMotion) return;
     let targets = [];
-    if (p.SENSE_03?.target && ((appState.selectedTasks.includes('TASK_2') && ['BIN','SINK'].includes(p.SENSE_03.target)) || (appState.selectedTasks.includes('TASK_6') && p.SENSE_03.target==='DOCK'))) targets = [p.SENSE_03];
+    if (appState.installedSensors.has('SENSE_03') && p.SENSE_03?.target && ((appState.selectedTasks.includes('TASK_2') && r.heldObject && ['BIN','TABLE'].includes(p.SENSE_03.target)) || (appState.selectedTasks.includes('TASK_6') && p.SENSE_03.target==='DOCK'))) targets = [p.SENSE_03];
     else {
-      if (appState.selectedTasks.includes('TASK_1') && p.mapDirt) targets.push(...p.mapDirt);
-      if (appState.selectedTasks.includes('TASK_3') && p.mapWet) targets.push(...p.mapWet);
+      if (appState.installedSensors.has('SENSE_07') && appState.installedSensors.has('SENSE_05') && appState.selectedTasks.includes('TASK_1') && p.mapDirt) targets.push(...p.mapDirt);
+      if (appState.installedSensors.has('SENSE_07') && appState.installedSensors.has('SENSE_06') && appState.selectedTasks.includes('TASK_3') && p.mapWet) targets.push(...p.mapWet);
       if (appState.selectedTasks.includes('TASK_2') && !r.heldObject) {
-        if (p.visibleObject) targets.push(p.visibleObject);
+        if (appState.installedSensors.has('SENSE_15') && p.visibleObject) targets.push(p.visibleObject);
         if (appState.installedSensors.has('SENSE_15') && p.rememberedObjects) targets.push(...p.rememberedObjects);
       }
       // Underfoot channels never reveal distant cells.
+    }
+    if (!targets.length && appState.installedSensors.has('SENSE_07')) {
+      const exploration=this.nextExplorationTarget();
+      if(exploration) targets.push(exploration);
     }
     // Keep a still-perceived goal while following its doorway route: switching
     // on straight-line distance mid-detour can oscillate between two rooms.
@@ -590,14 +649,51 @@ export class SimulationEngine {
       if(waypoint) r.heading=Math.atan2(waypoint.y-r.y,waypoint.x-r.x);
     }
     if(!target)this.navigationRoute=null;
-    this.moveRobot();
+    if (!target || Math.hypot(target.x-r.x,target.y-r.y)>5) this.moveRobot();
+  }
+
+  coveragePoints() {
+    if (this.coverageGrid) return this.coverageGrid;
+    const r=this.world.robot,points=[];
+    // 24px spacing is smaller than the 22px local dirt observation radius.
+    // Candidate positions use static geometry only, never task entities.
+    for(let y=0;y<this.world.height;y+=24) {
+      const row=[];
+      for(let x=0;x<this.world.width;x+=24) if(!this.world.checkCollision(x,y,r.radius+1)) row.push({x,y,key:`${x},${y}`});
+      if((y/24)%2)row.reverse();
+      points.push(...row);
+    }
+    this.coverageGrid=points;
+    return points;
+  }
+
+  currentCoverageCell() {
+    const r=this.world.robot;
+    return `${Math.round(r.x/24)*24},${Math.round(r.y/24)*24}`;
+  }
+
+  observeCoverage() {
+    const r=this.world.robot;
+    // The physical cell is visited even when its rounded center is too close
+    // to a wall to be a planning waypoint. Sensor reads never consume this visit.
+    this.enteredCells.add(this.currentCoverageCell());
+    for(const p of this.coveragePoints()) if(Math.hypot(p.x-r.x,p.y-r.y)<18) this.coverageVisited.add(p.key);
+  }
+
+  nextExplorationTarget() {
+    if(this.explorationTarget && !this.coverageVisited.has(this.explorationTarget.key)) return this.explorationTarget;
+    const r=this.world.robot;
+    this.explorationTarget=this.coveragePoints().filter(p=>!this.coverageVisited.has(p.key))
+      .sort((a,b)=>Math.hypot(a.x-r.x,a.y-r.y)-Math.hypot(b.x-r.x,b.y-r.y))[0] || null;
+    return this.explorationTarget;
   }
 
   routeTo(target) {
     const r=this.world.robot;
     const direct=(from,to)=>{
-      const move=this.world.resolveMove(from.x,from.y,to.x-from.x,to.y-from.y,r.radius);
-      return Math.hypot(move.x-to.x,move.y-to.y)<0.01;
+      const steps=Math.ceil(Math.hypot(to.x-from.x,to.y-from.y)/2);
+      for(let i=1;i<=steps;i++) if(this.world.checkCollision(from.x+(to.x-from.x)*i/steps,from.y+(to.y-from.y)*i/steps,r.radius)) return false;
+      return true;
     };
     // Planning uses only the static collision model and an already perceived goal.
     // It never searches world task entities or alters the normal door openings.
@@ -612,7 +708,7 @@ export class SimulationEngine {
     if(!this.navigationGrid) {
       const grid=new Map();
       for(let x=0;x<this.world.width;x+=size)for(let y=0;y<this.world.height;y+=size)
-        if(!this.world.checkCollision(x,y,r.radius))grid.set(`${x},${y}`,{x,y});
+        if(!this.world.checkCollision(x,y,r.radius+1))grid.set(`${x},${y}`,{x,y});
       this.navigationGrid=grid;
     }
     const grid=this.navigationGrid;
@@ -636,31 +732,42 @@ export class SimulationEngine {
     return points[0];
   }
 
+  get lowBatteryPercent() { return this.criteria[appState.currentStage].lowBatteryPercent ?? 30; }
+
   updateRobotPhysics() {
     const r=this.world.robot;
-    if (r.isCharging) r.battery=Math.min(100,r.battery+0.25);
-    else r.battery=Math.max(0,r.battery-0.05);
+    if (r.isCharging) r.battery=Math.min(100,r.battery+this.simulationSettings.chargePerTick);
+    else r.battery=Math.max(0,r.battery-this.simulationSettings.batteryDrainPerTick);
     if (r.heldObject) Object.assign(r.heldObject,{x:r.x+Math.cos(r.heading)*25,y:r.y+Math.sin(r.heading)*25});
     if (this.tickCount%4===0) {r.pathTrail.push({x:r.x,y:r.y});if(r.pathTrail.length>50)r.pathTrail.shift();}
+    if (appState.installedSensors.has('SENSE_02') && r.battery < this.lowBatteryPercent) this.lowBatteryEncounter=true;
     const moving = this.tickStart && Math.hypot(r.x-this.tickStart.x,r.y-this.tickStart.y)>0.001;
     if(moving) this.movingTicks++;
+    if(moving && this.selectedGoal==='DOCK' && this.lowBatteryGoalSelected) this.lowBatteryTravelTicks++;
+    if(!r.vacuumActive && !r.mopDeployed) this.inspectionTicks++;
+    if(moving && this.humanResumePending && Math.hypot(r.x-this.world.avatar.x,r.y-this.world.avatar.y)>120 && !r.isSlow) {
+      this.humanResumes++;this.humanResumePending=false;
+    }
     for (const [name,entity,opportunityRadius,violationRadius] of [['cat',this.world.cat,90,40],['human',this.world.avatar,120,60]]) {
-      const distance=Math.hypot(r.x-entity.x,r.y-entity.y),near=distance<opportunityRadius;
-      if(near && !this.encounters[name] && (moving || this.movingTicks>0)) this[`${name}Opportunities`]++;
-      // An encounter begins only once the robot has actually moved or responded while exploring.
-      this.encounters[name]=near && (moving || this.movingTicks>0);
+      const distance=Math.hypot(r.x-entity.x,r.y-entity.y), sensedDistance=this.tickStart?Math.hypot(this.tickStart.x-entity.x,this.tickStart.y-entity.y):distance, near=sensedDistance<=opportunityRadius;
+      if(near && !this.encounters[name] && (moving || this.previousMoving)) { this[`${name}Opportunities`]++; this.encounters[name]=true; }
+      // A parked robot cannot create a new encounter from movement long ago.
+      if(!near)this.encounters[name]=false;
       if(!near) { this.encounters[`${name}Violation`]=false; this.encounters[`${name}Response`]=false; }
       if(this.encounters[name] && (name==='cat'?r.isStopped:r.isSlow) && !this.encounters[`${name}Response`]) {
-        this[`${name}Responses`]++; this.encounters[`${name}Response`]=true;
+        this[`${name}Responses`]++; if(name==='human')this.humanResumePending=true; this.encounters[`${name}Response`]=true;
       }
-      if(distance<violationRadius && moving && (name==='cat'||!r.isSlow) && !this.encounters[`${name}Violation`]) {
+      if(name==='human' && near && moving)this.humanNearSpeeds.push(r.isSlow?1:r.speed);
+      if((name==='cat'?distance<violationRadius:sensedDistance<=opportunityRadius) && moving && (name==='cat'||!r.isSlow) && !this.encounters[`${name}Violation`]) {
         this[`${name==='cat'?'cat':'human'}SafetyViolations`]++;
         this.encounters[`${name}Violation`]=true;
       }
     }
-    const wet=this.world.wetCells.filter(w=>!w.cleaned&&Math.hypot(r.x-w.x,r.y-w.y)<w.radius+15);
+    this.previousMoving=Boolean(moving);
+    const wet=this.world.wetCells.filter(w=>!w.cleaned&&Math.hypot(r.x-w.x,r.y-w.y)<w.radius+10);
     if(r.vacuumActive && appState.installedActuators.has('ACTUATOR_VACUUM')) {
       this.vacuumTicks++;
+      if(!wet.length && !this.world.dirtCells.some(d=>!d.cleaned&&Math.hypot(r.x-d.x,r.y-d.y)<d.radius+15))this.cleanVacuumTicks++;
       for(const w of wet) if(!this.encounters.wet.includes(w.id)) this.vacuumLiquidMistakes++;
       this.encounters.wet=wet.map(w=>w.id);
       if(!wet.length) for(const d of this.world.dirtCells) if(Math.hypot(r.x-d.x,r.y-d.y)<d.radius+15)d.cleaned=true;
@@ -690,7 +797,7 @@ export class SimulationEngine {
       this.catSafetyViolations?`Kept moving with the cat within reach ${this.catSafetyViolations} times.`:done[3]?'Stopped for the cat every time.':this.catOpportunities?'Moved near the cat without stopping.':'No moving encounter with the cat.',
       this.humanSafetyViolations?`Passed the person at full speed ${this.humanSafetyViolations} times.`:done[4]?'Slowed down for the person every time.':this.humanOpportunities?'Moved near the person without slowing.':'No moving encounter with the person.',
       done[5]?`Docked at ${Math.round(this.dockedAtBattery)}% battery.`:failed[5]?'Battery ran out before docking.':this.reachedDock?'Reached the dock but never connected.':'Never approached the dock.'];
-    this.taskOutcomes=done.map((success,i)=>({taskId:`TASK_${i+1}`,status:success&&(!(i===3||i===4)||final)?'done':failed[i]||final?'failed':started[i]?'in_progress':'not_started',summary:summaries[i]})).filter(outcome => appState.selectedTasks.includes(outcome.taskId));
+    this.taskOutcomes=done.map((success,i)=>({taskId:`TASK_${i+1}`,status:success?'done':failed[i]||final?'failed':started[i]?'in_progress':'not_started',summary:summaries[i]})).filter(outcome => appState.selectedTasks.includes(outcome.taskId));
     const allDone=this.criteriaResults.every(c=>c.status==='Achieved');
     if(!allDone) this.completionSeconds=null;
     else if(this.runActive && this.completionSeconds===null)this.completionSeconds=this.elapsedSeconds;
@@ -699,23 +806,34 @@ export class SimulationEngine {
   updateCriteria() {
     const config = this.criteria[appState.currentStage];
     const counts = {
-      cleaning: [this.world.dirtCells.filter(d => d.cleaned).length, this.world.dirtCells.length, config.dirtFraction],
-      sorting: [this.world.objects.filter(o => o.sorted).length, this.world.objects.length, config.sortedFraction]
+      cleaning: [this.world.dirtCells.filter(d=>d.cleaned).length,this.world.dirtCells.length,config.dirtFraction,'dirt cells cleaned'],
+      sorting: [this.world.objects.filter(o=>o.sorted).length,this.world.objects.length,config.sortedFraction,'objects correctly sorted'],
+      spills: [this.world.wetCells.filter(w=>w.cleaned).length,this.world.wetCells.length,config.spillFraction,'spills mopped']
     };
-    const functionalDone = counts.cleaning[1] > 0 && counts.cleaning[0] / counts.cleaning[1] >= config.dirtFraction &&
-      (appState.currentStage !== 2 || (counts.sorting[1] > 0 && counts.sorting[0] / counts.sorting[1] >= config.sortedFraction));
-    if (!functionalDone) this.functionalCompletionSeconds = null;
-    else if (this.runActive && this.functionalCompletionSeconds == null) this.functionalCompletionSeconds = this.elapsedSeconds;
-    this.criteriaResults = criterionDescriptions(appState.currentStage, this.criteria).map(criterion => {
-      if (criterion.id === 'speed') {
-        const duration = this.functionalCompletionSeconds ?? this.elapsedSeconds;
-        return { ...criterion, observed: `${duration.toFixed(1)} seconds${functionalDone ? ' to complete tasks' : ' elapsed; tasks incomplete'}`,
-          status: functionalDone && duration <= config.speedLimitSeconds ? 'Achieved' : 'Not achieved' };
+    const results=criterionDescriptions(appState.currentStage,this.criteria).filter(c=>c.id!=='speed').map(criterion=>{
+      let achieved=false,partial=false,observed;
+      if(counts[criterion.id]) {
+        const [count,total,fraction,label]=counts[criterion.id];
+        achieved=total>0&&count/total>=fraction;partial=count>0;observed=`${count} / ${total} ${label}`;
+        if(criterion.id==='spills') {achieved &&= this.vacuumLiquidMistakes<=config.maxVacuumLiquidMistakes;observed+=`; ${this.vacuumLiquidMistakes} vacuum-on-liquid events`;}
+      } else if(criterion.id==='cat') {
+        achieved=this.catOpportunities>=config.minCatEncounters && this.catResponses>=this.catOpportunities && this.movingTicks>0 && this.catSafetyViolations<=config.maxCatViolations;
+        partial=this.catResponses>0;observed=`${this.catOpportunities} moving encounters; ${this.catResponses} stops; ${this.catSafetyViolations} unsafe crossings`;
+      } else if(criterion.id==='human') {
+        achieved=this.humanOpportunities>=config.minHumanEncounters && this.humanResponses>=this.humanOpportunities && this.humanResumes>=config.minHumanResumes && this.movingTicks>0 && this.humanSafetyViolations<=config.maxHumanViolations;
+        partial=this.humanResponses>0;observed=`${this.humanOpportunities} moving encounters; ${this.humanResponses} slow responses; ${this.humanResumes} resumes; ${this.humanSafetyViolations} fast passes`;
+      } else if(criterion.id==='docking') {
+        achieved=this.lowBatteryEncounter && this.lowBatteryGoalSelected && this.lowBatteryTravelTicks>0 && this.dockedAtBattery>0;
+        partial=this.lowBatteryGoalSelected;observed=this.dockedAtBattery===null?`Low battery ${this.lowBatteryEncounter?'observed':'not observed'}; ${this.lowBatteryTravelTicks} travel ticks toward selected DOCK; not connected`:`Connected at ${this.dockedAtBattery.toFixed(1)}% battery; ${this.lowBatteryTravelTicks} low-battery travel ticks`;
       }
-      const [count, total, fraction] = counts[criterion.id];
-      return { ...criterion, observed: `${count} / ${total} ${criterion.id === 'cleaning' ? 'dirt cells cleaned' : 'objects correctly sorted'}`,
-        status: total > 0 && count / total >= fraction ? 'Achieved' : count > 0 ? 'Partially achieved' : 'Not achieved' };
+      return {...criterion,observed,status:achieved?'Achieved':partial?'Partially achieved':'Not achieved'};
     });
+    const functionalDone=results.every(c=>c.status==='Achieved');
+    if(!functionalDone)this.functionalCompletionSeconds=null;
+    else if(this.runActive && this.functionalCompletionSeconds===null)this.functionalCompletionSeconds=this.elapsedSeconds;
+    this.criteriaResults=results;
+    const speed=criterionDescriptions(appState.currentStage,this.criteria).find(c=>c.id==='speed');
+    if(speed){const duration=this.functionalCompletionSeconds??this.elapsedSeconds;this.criteriaResults.push({...speed,observed:`${duration.toFixed(1)} seconds${functionalDone?' to complete tasks':' elapsed; tasks incomplete'}`,status:functionalDone&&duration<=config.speedLimitSeconds?'Achieved':'Not achieved'});}
   }
 
   computeScores() {

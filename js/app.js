@@ -1,3 +1,4 @@
+import { PILOT_STAGES } from './pilot-config.js';
 /**
  * PEASLab2D - Main Application Coordinator (v0.3)
  * Integrates 3D 360-Degree WebGL Engine (Apartment.glb), 360° OrbitControls & FPS Walkthrough,
@@ -312,7 +313,7 @@ window.addEventListener('DOMContentLoaded', () => {
     });
 
     if (STEP_METADATA[step]) {
-      if (modalBadge) modalBadge.innerText = `STAGE ${appState.currentStage} OF 2 · ${STEP_METADATA[step].badge}`;
+      if (modalBadge) modalBadge.innerText = `STAGE ${appState.currentStage} OF ${PILOT_STAGES.length} · ${STEP_METADATA[step].badge}`;
       if (modalHeading) modalHeading.innerText = STEP_METADATA[step].heading;
     }
 
@@ -403,7 +404,7 @@ window.addEventListener('DOMContentLoaded', () => {
   appState.on('stageChanged',()=>{
     simEngine.reset();
     updateStepUi(1);
-    const stageLabel=`Stage ${appState.currentStage} of 2 · Vacuum + object sorting`;
+    const stageLabel=`Stage ${appState.currentStage} of ${PILOT_STAGES.length} · ${PILOT_STAGES[appState.currentStage-1].name}`;
     document.getElementById('stageProgress').textContent=stageLabel;
     document.getElementById('hudTaskName').textContent=stageLabel;
   });

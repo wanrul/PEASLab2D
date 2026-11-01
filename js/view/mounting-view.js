@@ -37,17 +37,17 @@ function renderMounting(container, kind) {
   const sensor = kind === 'sensor';
   const catalog = sensor ? SENSORS_CATALOG : ACTUATORS_CATALOG;
   const installed = sensor ? appState.installedSensors : appState.installedActuators;
-  const capacity = sensor ? 11 : 10;
+  const capacity = sensor ? appState.sensorBudget : 10;
   slots[kind] = slots[kind].map(id => installed.has(id) ? id : null);
   for (const id of installed) if (!slots[kind].includes(id)) slots[kind][slots[kind].indexOf(null)] = id;
   container.innerHTML = `<div class="mounting-editor" data-kind="${kind}"><h2>${sensor ? 'Give your robot senses' : 'Give your robot a body'}</h2><p>${sensor ? 'Walk the apartment. Then mount the sensors your robot needs.' : 'Mount the parts your robot needs for the current tasks.'}</p>${referenceStrip()}
     <div class="mounting-layout"><div class="mounting-library">${randomized(catalog, kind).map(item => moduleCard(item, kind, installed.has(item.id))).join('')}</div>
     <div class="mounting-assembly"><div class="assembly-preview" aria-label="${sensor ? 'Robot sensor silhouette' : '3D robot assembly'}">${sensor ? `<div class="sensor-robot-preview"><div class="sensor-silhouette" aria-hidden="true">◉<br>▰<br>▥ ▥</div>${slots.sensor.map((id,index)=>{const item=SENSORS_CATALOG.find(item=>item.id===id);return item?`<span class="attached-sensor" data-attached-sensor="${id}" style="--sensor-x:${index<6?12:68}%;--sensor-y:${12+(index%6)*14}%" title="${item.name}">${item.icon} ${item.shortName||item.name}</span>`:'';}).join('')}</div>` : '<canvas class="assembly-canvas" style="width:100%;height:260px;display:block"></canvas>'}</div>
-    <div class="mounting-points">${slots[kind].map((id, index) => {
+    <div class="mounting-points">${slots[kind].slice(0,capacity).map((id, index) => {
       const item = catalog.find(m => m.id === id);
       return `<button class="mount-point ${id ? 'mounted' : ''}" data-mount-index="${index}" aria-label="Mounting point ${index + 1}${item ? ': ' + item.name + ', remove or replace' : ': empty'}">${item ? `${item.icon} ${item.shortName || item.name}` : `＋ ${index + 1}`}</button>`;
     }).join('')}</div><p class="mount-count">${installed.size} / ${capacity} mounted</p>
-    <p class="mount-gate">Up to ${capacity} ${sensor ? 'sensors' : 'actuators'}. No minimum selection.</p>
+    <p class="mount-gate">${sensor ? `Stage ${appState.currentStage} budget: ` : ''}Up to ${capacity} ${sensor ? 'sensors' : 'actuators'}. No minimum selection.</p>
     <div class="mounting-actions">${sensor ? '<button class="btn btn-outline mounting-pov">See what your robot sees</button>' : ''}
     <button class="btn btn-primary mounting-continue" ${installed.size <= capacity ? '' : 'disabled'}>Continue</button></div></div></div></div>`;
   const toggle = id => sensor ? appState.toggleSensor(id) : appState.toggleActuator(id);
@@ -56,6 +56,11 @@ function renderMounting(container, kind) {
     const old = slots[kind][index];
     if (old === id) return;
     const existingIndex = slots[kind].indexOf(id);
+    if (!old && existingIndex < 0 && installed.size >= capacity) {
+      const result=toggle(id);
+      container.querySelector('.mount-gate').textContent=result.reason || `Up to ${capacity} mounted. Remove or replace a module.`;
+      return;
+    }
     if (existingIndex >= 0) {
       slots[kind][existingIndex] = old;
       appState.record(sensor ? 'SENSOR_MOUNTED' : 'ACTUATOR_MOUNTED', id, {mountPoint:index,previousPoint:existingIndex,swappedWith:old,installed:[...installed]});
