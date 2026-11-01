@@ -28,7 +28,7 @@ export function moduleCard(item, kind, mounted = false) {
   return `<button class="module-card ${mounted ? 'mounted' : ''}" draggable="true" data-module-id="${item.id}" aria-pressed="${mounted}"><span class="module-icon">${item.icon}</span><strong>${item.name}</strong><span>${description}</span></button>`;
 }
 export function referenceStrip() {
-  return `<div class="task-reference-strip">${TASKS_CATALOG.map(t => `<span>${t.icon} ${t.shortName || t.name}</span>`).join('')}</div>`;
+  return `<div class="task-reference-strip">${TASKS_CATALOG.filter(t => appState.selectedTasks.includes(t.id)).map(t => `<span>${t.icon} ${t.shortName || t.name}</span>`).join('')}</div>`;
 }
 function renderMounting(container, kind) {
   const sameEditor = container.querySelector('.mounting-editor')?.dataset?.kind === kind;
@@ -38,19 +38,18 @@ function renderMounting(container, kind) {
   const catalog = sensor ? SENSORS_CATALOG : ACTUATORS_CATALOG;
   const installed = sensor ? appState.installedSensors : appState.installedActuators;
   const capacity = sensor ? 11 : 10;
-  const minimum = sensor ? 8 : 7;
   slots[kind] = slots[kind].map(id => installed.has(id) ? id : null);
   for (const id of installed) if (!slots[kind].includes(id)) slots[kind][slots[kind].indexOf(null)] = id;
-  container.innerHTML = `<div class="mounting-editor" data-kind="${kind}"><h2>${sensor ? 'Give your robot senses' : 'Give your robot a body'}</h2><p>${sensor ? 'Walk the apartment. Then mount the sensors your robot needs.' : 'Mount the parts your robot needs to do its six tasks.'}</p>${referenceStrip()}
+  container.innerHTML = `<div class="mounting-editor" data-kind="${kind}"><h2>${sensor ? 'Give your robot senses' : 'Give your robot a body'}</h2><p>${sensor ? 'Walk the apartment. Then mount the sensors your robot needs.' : 'Mount the parts your robot needs for the current tasks.'}</p>${referenceStrip()}
     <div class="mounting-layout"><div class="mounting-library">${randomized(catalog, kind).map(item => moduleCard(item, kind, installed.has(item.id))).join('')}</div>
-    <div class="mounting-assembly"><div class="assembly-preview" aria-label="${sensor ? 'Robot sensor silhouette' : '3D robot assembly'}">${sensor ? '<div class="sensor-silhouette" aria-hidden="true">◉<br>▰<br>▥ ▥</div>' : '<canvas class="assembly-canvas" style="width:100%;height:260px;display:block"></canvas>'}</div>
+    <div class="mounting-assembly"><div class="assembly-preview" aria-label="${sensor ? 'Robot sensor silhouette' : '3D robot assembly'}">${sensor ? `<div class="sensor-robot-preview"><div class="sensor-silhouette" aria-hidden="true">◉<br>▰<br>▥ ▥</div>${slots.sensor.map((id,index)=>{const item=SENSORS_CATALOG.find(item=>item.id===id);return item?`<span class="attached-sensor" data-attached-sensor="${id}" style="--sensor-x:${index<6?12:68}%;--sensor-y:${12+(index%6)*14}%" title="${item.name}">${item.icon} ${item.shortName||item.name}</span>`:'';}).join('')}</div>` : '<canvas class="assembly-canvas" style="width:100%;height:260px;display:block"></canvas>'}</div>
     <div class="mounting-points">${slots[kind].map((id, index) => {
       const item = catalog.find(m => m.id === id);
       return `<button class="mount-point ${id ? 'mounted' : ''}" data-mount-index="${index}" aria-label="Mounting point ${index + 1}${item ? ': ' + item.name + ', remove or replace' : ': empty'}">${item ? `${item.icon} ${item.shortName || item.name}` : `＋ ${index + 1}`}</button>`;
     }).join('')}</div><p class="mount-count">${installed.size} / ${capacity} mounted</p>
-    <p class="mount-gate">Mount ${minimum}–${capacity} ${sensor ? 'sensors' : 'actuators'} to continue.</p>
+    <p class="mount-gate">Up to ${capacity} ${sensor ? 'sensors' : 'actuators'}. No minimum selection.</p>
     <div class="mounting-actions">${sensor ? '<button class="btn btn-outline mounting-pov">See what your robot sees</button>' : ''}
-    <button class="btn btn-primary mounting-continue" ${installed.size >= minimum && installed.size <= capacity ? '' : 'disabled'}>Continue</button></div></div></div></div>`;
+    <button class="btn btn-primary mounting-continue" ${installed.size <= capacity ? '' : 'disabled'}>Continue</button></div></div></div></div>`;
   const toggle = id => sensor ? appState.toggleSensor(id) : appState.toggleActuator(id);
   const mount = (index, id) => {
     if (!catalog.some(item => item.id === id)) return;
@@ -92,7 +91,7 @@ function renderMounting(container, kind) {
     point.ondrop = event => { event.preventDefault(); mount(index, event.dataTransfer.getData('text/plain')); };
   });
   container.querySelector('.mounting-continue').onclick = () => {
-    if (installed.size < minimum || installed.size > capacity) return;
+    if (installed.size > capacity) return;
     if (window.navigateStep) window.navigateStep(sensor ? 3 : 4); else appState.setStep(sensor ? 3 : 4);
   };
   const pov = container.querySelector('.mounting-pov');
@@ -127,7 +126,11 @@ async function animateAssembly(container, activeId = null) {
   if (disposed || !container.isConnected) return;
   const canvas = container.querySelector('.assembly-canvas');
   if (!canvas) return;
-  renderer = new THREE.WebGLRenderer({ canvas, alpha: true, antialias: true });
+  try { renderer = new THREE.WebGLRenderer({ canvas, alpha: true, antialias: true }); }
+  catch {
+    canvas.replaceWith(Object.assign(document.createElement('p'), { textContent: '3D assembly preview is unavailable. Installed modules are labeled at their mounting points below.' }));
+    return;
+  }
   renderer.setSize(canvas.clientWidth || 360, 260, false);
   renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
   scene = new THREE.Scene();

@@ -8,8 +8,9 @@ import { ApartmentWorld } from '../js/sim/world.js';
 import { SessionLogger } from '../js/logging/session-log.js';
 
 function fixture(t) {
-  const saved = { rules:appState.rules, nextRuleId:appState.nextRuleId, rulesRevision:appState.rulesRevision, installedSensors:appState.installedSensors, installedActuators:appState.installedActuators };
+  const saved = { currentStage:appState.currentStage, selectedTasks:appState.selectedTasks, stagePurposes:appState.stagePurposes, stageResults:appState.stageResults, rules:appState.rules, nextRuleId:appState.nextRuleId, rulesRevision:appState.rulesRevision, installedSensors:appState.installedSensors, installedActuators:appState.installedActuators };
   const fresh = new appState.constructor(); Object.keys(saved).forEach(key=>appState[key]=fresh[key]);
+  appState.currentStage=2;appState.selectedTasks=['TASK_1','TASK_2'];appState.stagePurposes[2]=appState.createStagePurposes(2);appState.stageResults[2]={passingRunId:null,closingText:''};
   t.after(()=>Object.assign(appState,saved));
   return {world:new ApartmentWorld()};
 }
@@ -23,15 +24,15 @@ function editor() {
   return {view,container};
 }
 
-test('adding empty rules keeps six task groups; removing one preserves neighbors and never removes a sole row',t=>{
+test('adding empty rules keeps unlocked task groups; removing one preserves neighbors and never removes a sole row',t=>{
   fixture(t);const state=appState;
   assert.equal(typeof state.addRule,'function');
   const original=state.rules[1];author(original,{sense:'SENSE_15',action:'ACT_13'});
   const added=state.addRule('TASK_2');assert.equal(added.taskId,'TASK_2');assert.notEqual(added.id,original.id);
-  assert.deepEqual(Object.values(added.slots),[null,null,null,null,null]);
+  assert.deepEqual(Object.values(added.slots),[null,null,null,null,null,null]);
   const {view,container}=editor();view.render();
-  assert.equal((container.html.match(/class="task-zone-card"/g)||[]).length,6);
-  assert.equal((container.html.match(/class="rule-row"/g)||[]).length,7);
+  assert.equal((container.html.match(/class="task-zone-card"/g)||[]).length,2);
+  assert.equal((container.html.match(/class="rule-row"/g)||[]).length,3);
   assert.match(container.html,/Rule 2/);assert.match(container.html,/aria-label="Add rule for Pick up and sort scattered objects/);
   assert.equal(state.removeRule(added.id),true);assert.equal(original.slots.action,'ACT_13');
   assert.equal(state.removeRule(original.id),false);assert.equal(state.rules.length,6);
@@ -53,7 +54,7 @@ test('two authored TASK_2 rules pick up, carry and correctly release without usi
   const {world}=fixture(t);assert.equal(typeof appState.addRule,'function');
   appState.installedSensors=new Set(['SENSE_15','SENSE_03']);appState.installedActuators=new Set(['ACTUATOR_WHEELS','ACTUATOR_ROTATION','ACTUATOR_ARM_EXT','ACTUATOR_GRIP_CLOSE','ACTUATOR_GRIP_OPEN']);
   Object.assign(world.robot,{x:350,y:470,heading:0});world.objects=[{id:'one',type:'TRASH',x:375,y:470,carried:false,disposed:false}];Object.assign(world.smartBin,{x:420,y:510});world.cat.state='pause';world.cat.pauseTimer=10000;
-  const pickup=appState.rules[1],drop=appState.addRule('TASK_2');author(pickup,{sense:'SENSE_15',condition:'COND_16',action:'ACT_13',control:'CTRL_04',secondaryAction:'ACT_14'});author(drop,{sense:'SENSE_03',condition:'COND_10',action:'ACT_15',control:'CTRL_05'});
+  const pickup=appState.rules[1],drop=appState.addRule('TASK_2');author(pickup,{sense:'SENSE_15',condition:'COND_16',action:'ACT_13',control:'CTRL_04',secondaryAction:'ACT_14'});author(drop,{sense:'SENSE_03',condition:'COND_10',action:'ACT_15',priority:'CTRL_05'});
   const logger=new SessionLogger(appState),engine=new SimulationEngine(world);let carried=false;const fired=new Set();
   for(let i=0;i<100;i++){engine.tick();if(world.robot.heldObject){carried=true;assert.ok(Math.hypot(world.robot.heldObject.x-world.robot.x,world.robot.heldObject.y-world.robot.y)<26);}if(engine.activeRuleFired)fired.add(engine.activeRuleFired.ruleId);}
   assert.equal(carried,true);assert.equal(engine.pickups,1);assert.equal(engine.releases,1);assert.equal(world.objects[0].sorted,true);assert.equal(engine.taskOutcomes[1].status,'done');assert.deepEqual(fired,new Set([pickup.id,drop.id]));
@@ -61,17 +62,17 @@ test('two authored TASK_2 rules pick up, carry and correctly release without usi
   for(const e of logger.events.filter(e=>e.event==='RULE_FIRED')){const d=JSON.parse(e.detail);assert.equal(e.target_id,d.ruleId);assert.equal(d.taskId,'TASK_2');assert.ok(fired.has(d.ruleId));}
 });
 
-test('attempt counts remain distinct tasks in editor and Step5; Time completes after both rows of one task',t=>{
+test('attempt counts remain distinct unlocked tasks in editor and Step5; stage completion includes cleaning',t=>{
   const {world}=fixture(t);assert.equal(typeof appState.addRule,'function');const first=appState.rules[1];author(first,{sense:'SENSE_15',action:'ACT_13'});
   for(let i=0;i<8;i++)author(appState.addRule('TASK_2'),{sense:'SENSE_03',action:'ACT_15'});
   assert.deepEqual(appState.getAttemptedTaskIds(),['TASK_2']);
   const {view,container}=editor();view.render();const priorWindow=globalThis.window;globalThis.window={navigateStep(){}};t.after(()=>globalThis.window=priorWindow);
   // Retain one node per selector for handler output.
-  const nodes={};container.querySelector=selector=>selector==='.task-zones-column'?container.zone:selector==='.palette-list'?container.list:(nodes[selector] ||= {});view.attachEvents();nodes['.rule-continue'].onclick();assert.equal(nodes['.rule-attempt-count'].textContent,'Your robot will attempt 1 of 6 tasks.');
+  const nodes={};container.querySelector=selector=>selector==='.task-zones-column'?container.zone:selector==='.palette-list'?container.list:(nodes[selector] ||= {});view.attachEvents();nodes['.rule-continue'].onclick();assert.equal(nodes['.rule-attempt-count'].textContent,'Rules configured for 1 current task.');
   const engine=new SimulationEngine(world);window.simEngine=engine;
-  const steps=Object.create(StepsView.prototype);steps.panel={innerHTML:'',querySelector:selector=>selector==='#runTrace'?null:{},querySelectorAll:()=>[]};steps.renderStep5();assert.match(steps.panel.innerHTML,/attempt 1 of 6 tasks/);
-  world.objects.forEach(o=>o.sorted=true);engine.runActive=true;engine.elapsedSeconds=0.5;engine.updateOutcomes();assert.equal(engine.completionSeconds,0.5);
-  for(const r of appState.rules)author(r,{sense:'SENSE_02',action:'ACT_18'});assert.equal(appState.getAttemptedTaskIds().length,6);
+  const steps=Object.create(StepsView.prototype);steps.panel={innerHTML:'',querySelector:selector=>selector==='#runTrace'?null:{},querySelectorAll:()=>[]};steps.renderStep5();assert.match(steps.panel.innerHTML,/Rules configured for 1 current task/);
+  world.objects.forEach(o=>o.sorted=true);world.dirtCells.forEach(d=>d.cleaned=true);engine.runActive=true;engine.elapsedSeconds=0.5;engine.updateOutcomes();assert.equal(engine.completionSeconds,0.5);
+  for(const r of appState.rules)author(r,{sense:'SENSE_02',action:'ACT_18'});assert.equal(appState.getAttemptedTaskIds().length,2);
 });
 
 test('removed or shifted identical THEN rows cannot inherit another row continuation, including preview restore',t=>{

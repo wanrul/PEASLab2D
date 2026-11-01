@@ -1,6 +1,6 @@
-# PEASLab2D
+# PEASLab — staged single-learner pilot
 
-Independent single-learner adaptation of CollabPEAS commit `1389b5cc260e03c8f235dfc001a21ba7c52b55ae`. The original application remains untouched in `../CollabPEAS/collabpeas-2d`.
+A desktop robot-design prototype using the existing apartment, collision model and complete task, sensor, actuator and block catalogs. No package installation or internet is required.
 
 ## Open
 
@@ -8,49 +8,53 @@ Independent single-learner adaptation of CollabPEAS commit `1389b5cc260e03c8f235
 node server.js 8089
 ```
 
-Open http://localhost:8089 and keep the server running. Local files and Node.js suffice; no package installation or internet is needed. Sessions are in memory and start fresh on refresh.
+Open http://localhost:8089 and keep the server running. Sessions are in memory; refreshing starts a new session. Download the session log before closing.
 
-## Learning flow
+## Current workflow
 
-The current frontend follows the supplied v6 build brief, transcribed in `docs/BUILD_BRIEF_V6.txt`.
+Start in FPS at the fixed living-room position (130, 645; heading −0.662), with Workstation closed. Keep FPS, 3D overhead/orbit and Robot POV; exiting POV restores the previous page and camera. The internal overhead canvas is used for rule previews and as a WebGL failure fallback. It is not a normal learner view option.
 
-1. Set four weights in 10% increments totaling 100 for the fixed six-task mission; a red inline notice appears above 100%.
-2. Inspect the apartment, mount 8–11 of 15 sensors, and try sensor-bounded robot POV.
-3. Mount 7–10 of 14 actuators on the assembly preview.
-4. Build rules in six fixed task zones, each initially holding one empty typed row. Add or remove rows within a task; the sole remaining row cannot be removed. One SENSE + ACTION pair allows continuing. Semantic mismatches are accepted and the robot demonstrates the result.
-5. Watch six live task icons and four scores; run, stamp observations with optional notes, revise sensors/body/rules, answer a once-per-run reflection, then finish with closing text and a first/final run summary.
+1. **Stage 1: vacuum the floor.** Choose a task priority and define its purpose, assemble a robot, author rules, and test cleaning.
+2. **Stage 2: add object pickup and sorting.** After a recorded passing Stage 1 run, explicitly select **Continue to next stage**. Sensors, actuators, stable rule IDs, observations and Stage 1 results carry forward. Revisit the five steps for the cumulative task set. Test sorting and the original cleaning capability together.
 
-Mounting catalogs scroll independently of the fixed assembly panel. The rule library has SENSE/CONDITION/ACTION/CONTROL tabs, remembers each category’s scroll position and retains both column offsets after placing or removing blocks.
+Each stage follows Purpose → Sensors → Actuators → Logic → Test & Debug. Steps unlock progressively and remain revisitable within the stage. Purpose requires an explicit priority for every current task: Thorough cleaning / Speed for cleaning; Correct sorting / Speed for sorting. Priorities record intent; they do not silently alter motion or execution.
 
-Hardware and rules start empty. Cards have randomized order and no recommendation/distractor/limitation labels. Steps unlock through numeric gates and remain revisitable. Rule previews restore the original simulation state before formal testing. Finish prevents further runs in that session.
+The complete 15-sensor and 14-actuator libraries stay available at every stage. Hardware starts empty. Only physical capacities apply: up to 11 sensors and 10 actuators, with **no minimum**. Cards carry no recommendation or correctness labels. Installed sensors have labeled attachments on the body; actuator assembly remains procedural. Library scrolling is independent of the fixed assembly panel.
 
-Five hotspots and scattered objects appear in 2D, orbit and FPS. Robot POV shows only mounted sensor channels; without the vision module the apartment image is absent. Exit returns to the prior page and camera. FPS/POV retain the wider field of view and compact labels.
+The Logic editor shows only unlocked task groups. Each has at least one empty typed rule row; additional rows have no imposed limit. Sense (15), Condition (20), Action (23) and Flow Control (CTRL_01–04) retain the full original entries. **High/Normal execution priority** uses CTRL_05/06 in a separate row selector, so it can coexist with THEN, WAIT or repeat. THEN exposes a typed second action. Editing retains shelf and rule-column scroll positions. Missing hardware and semantic mismatches are observed during execution rather than rejected or corrected.
 
-## Research logs and measures
+## Researcher criteria
 
-Download log produces one CSV with `timestamp,step,event,target_id,detail`; detail includes event order and relevant configuration/behavior data. There is no PlayerID column. RULE_ADDED and RULE_REMOVED target the stable rule ID and include the task ID and rule slots; BLOCK_PLACED/BLOCK_REMOVED retain the block target and include task, rule and slot identities. RULE_FIRED targets the stable rule ID and includes its task identity. RUN_ENDED records four scores, weighted total, all six observed task outcomes, world/event counters, elapsed simulation time, completion results and weights. Sessions are local, without participant recruitment IDs or persistent storage.
+Edit `js/pilot-config.js` before a pilot. The defaults are **uncalibrated pilot operational settings, not validated thresholds**:
 
-Scores expose their definitions on hover: Coverage is 70% dirt cleaned + 30% correctly sorted objects; Safety is 100 minus 8 per moving cat near-miss and 5 per fast person pass; Hazard is the percentage of spills mopped minus 25 per vacuum-on-spill encounter. Continuous encounters count once until the robot leaves. Time uses 10 Hz simulation time, excluding pauses and independent of playback speed. It stays at 100 through the run limit and falls linearly by 100 × overtime / limit afterward; completion of every attempted task freezes its completion time, unless a later failure invalidates that completion. Runs continue after the limit. Coefficients are centralized in `SCORE_CONSTANTS`. The default 120-second run limit is a provisional, uncalibrated pilot setting; a researcher can pass `new SimulationEngine(world, { runLimitSeconds: 120 })`. There is no learner-facing limit setting. These measures need pilot calibration before a formal study. Light/lux and held-object mass are not modeled; those mounted channels display a dash rather than fabricated readings. The body assembly uses procedural geometry and one-second module animations.
+- Stage 1: all initial dirt cells cleaned (`dirtFraction: 1`).
+- Stage 2: all initial dirt cells cleaned and all initial objects correctly sorted (`dirtFraction: 1`, `sortedFraction: 1`).
+- Both stages: `speedLimitSeconds: null`. Duration is an observation and does not affect passage. A selected Speed priority does not invent a time target.
 
-## Execution and observed outcomes
+If a researcher supplies a finite numeric speed target, the criterion checks actual simulation time to complete the required functions. It reports incomplete work as unmet even before that target. The Timer block's limit condition uses that same explicit target; with no target it cannot fire on an invented timeout. There is no learner-facing researcher setup screen.
 
-All six tasks run together. The body explores only with Wheel Drive and Body Rotation. Navigation chooses an already perceived target (mapped dirt or wet cells, the nearest visible object, or a reported destination), routes through the existing apartment doorways, and uses a visibly named built-in collision reflex. It does not consult a selected task. An engaged dock connector requests return; only mounted Destination sensing guides that return, and connecting still requires physical arrival. No teleportation or implicit sorting is used.
+## Testing and feedback
 
-Each action requires its catalog actuator. Missing sensors and actuators produce observable trace lines. WAIT delays 20 ticks before continuing; WHILE and UNTIL repeat while their condition holds. HIGH wins arbitration. THEN exposes a typed secondary Action slot and attempts it on the next available tick before another normal-priority primary, including when the primary lacks an actuator. One winning rule action executes per tick.
+Run starts a fresh formal run from the same reset environment and fresh counters, clock and control queues. Pause/resume and playback Speed preserve the current run. Reset clears the world and runtime, retaining the assembled design, observations, stage history and recorded passing runs. Rule/hardware/purpose edits invalidate stale WAIT/THEN runtime. Preview restores world entity identities and counters and cannot record a formal run or unlock a stage.
 
-Carried objects ride the robot, misplaced releases remain on the floor, correct deposits count as sorted, and the bin lid opens visibly. LED actions share the catalog colors in 2D and 3D. Completed run summaries include the six observed one-line outcomes and retain them in the final summary and CSV. Safety completion requires actual movement, an encounter, the appropriate stop/slow response and no violation; an untouched environment cannot earn those task completions.
+Only unlocked task rules can fire or provide navigation goals. Routing uses mounted perception and normal door openings; it never cleans or sorts automatically. With Vision mounted, previously seen object positions can remain navigation candidates until pickup, so a detected object is not forgotten while another goal is handled. Memory resets for each fresh run and cannot reveal an unseen object. Wheel Drive and Body Rotation are both needed to move. Every action requires its catalog actuator. Carrying, misplaced releases, correct deposits, bin lids and catalog LED colors remain visible.
 
-The supplied outcome table omits never-approached docking and safety cases with no opportunity or no observed response. Those cases use neutral observations (for example, “Never approached the dock.”), without naming a fix. Each fixed task zone supports multiple independently authored rules, so a task can use multiple chains without borrowing another task’s zone. Added rows are empty and there is no rule-count cap. Attempted-task counts and Time completion track distinct task IDs (0–6), regardless of row count. Every row has a stable ID used by execution, highlighting and logs. Rule edits, additions and removals restart WAIT timing and clear pending THEN actions; pause/resume preserves those controls when configuration is unchanged.
+Test & Debug and the HUD show factual criterion evidence with **Achieved / Partially achieved / Not achieved**, counts and elapsed simulation seconds. There are no numeric grades or weighted totals. Use **End run & evaluate** to record an outcome. A failed formal ending can show one short reflection about goal, sensors, rules or actuators; unfinished progress and previews do not trigger one. Direct edit buttons return to all four design steps. Stage 1 progression uses its retained recorded passing run, explicitly labeled as such; a later failed revision is separately recorded and never presented as current success. Finish in Stage 2 opens a closing reflection and a per-stage summary.
 
-## Geometry and checks
+## Research records
 
-The 2D background is a true overhead render of the same GLB and coordinate projection as collision and markers. A matching vector plan is shown while loading or without WebGL. Architectural walls, exposed floor boundaries and principal furniture footprints come from the GLB. Movement substeps prevent tunneling; safe spawn, reset and teleport destinations are checked.
+**Download log** exports one CSV: `timestamp,step,event,target_id,detail`. Detail includes stage IDs, current task IDs and event order. Purpose changes and task priorities are separate from rule execution priorities. Rule changes and firings retain stable task/rule identity. Run-start/end records contain the configuration, researcher criteria, factual outcomes, counts, elapsed seconds and pass result. New snapshots contain no scores or weights. Stage start/end/transition, observations and reflections retain their stage context. No Player A/B, participant-ID column or network synchronization is used.
 
-After replacing the model, regenerate collision data:
+Private legacy scoring helpers remain only for regression coverage; they do not determine passage, learner feedback or new run exports. Older build briefs and upstream design documents are historical references superseded by the staged pilot workflow. See `docs/STAGED_PILOT.md` for implementation and research details.
+
+## Verification
 
 ```bash
-node scripts/extract-apartment-collision.mjs
 node --test tests/*.test.mjs
 ```
 
-Other copied upstream documents are historical references; they do not describe this v6 interface.
+A default-apartment rule-driven regression completes Stage 1 and cumulative Stage 2 using ordinary battery, without manipulating objects, walls or power. The regression suite covers stage passage, preview isolation, configuration carryover, fresh-run resets, rule controls, criteria, logs, mounted hardware, routing/collision and POV restoration. Catalog fingerprints verify byte preservation independently of Git history. Collision geometry remains derived from the existing GLB; regenerate only when replacing the model:
+
+```bash
+node scripts/extract-apartment-collision.mjs
+```

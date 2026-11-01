@@ -7,6 +7,7 @@
   <link rel="stylesheet" href="styles/main.css" />
   <link rel="stylesheet" href="styles/blocks.css" />
   <link rel="stylesheet" href="styles/v6.css" />
+  <link rel="stylesheet" href="styles/light.css" />
 
   <!-- Importmap for Local Three.js and Addons -->
   <script type="importmap">
@@ -36,42 +37,9 @@
         </div>
         <div class="loading-sub" id="glbProgressText">Initializing 360° Interactive Environment...</div>
         <button class="btn btn-sm btn-outline cancel-glb-btn" id="cancelGlbLoadBtn" style="margin-top: 14px; font-weight: 600;">
-          ✕ Skip to 2D Map
+          ✕ Dismiss loading overlay
         </button>
       </div>
-    </div>
-
-    <!-- Interactive 360° Compass & Rotation Dial (Top Right Floating HUD) -->
-    <div class="compass-widget" id="compassWidget" title="Click or drag to rotate 360°">
-      <div class="compass-dial" id="compassDial">
-        <div class="compass-needle" id="compassNeedle">
-          <span class="needle-north">▲ N</span>
-          <span class="needle-south">▼ S</span>
-        </div>
-        <div class="compass-center-dot"></div>
-      </div>
-      <div class="compass-readout" id="compassReadout">🧭 0° N</div>
-      <div class="compass-quick-btns">
-        <button class="compass-btn" data-angle="0" title="Snap to North (0°)">N</button>
-        <button class="compass-btn" data-angle="90" title="Snap to East (90°)">E</button>
-        <button class="compass-btn" data-angle="180" title="Snap to South (180°)">S</button>
-        <button class="compass-btn" data-angle="270" title="Snap to West (270°)">W</button>
-        <button class="compass-btn" data-angle="45" title="3D Isometric (45°)">ISO</button>
-        <button class="compass-btn" id="autoSpinBtn" title="Toggle Auto 360° Orbit">🔄</button>
-      </div>
-    </div>
-
-    <!-- Floating On-Screen Navigation & 360° Interaction Hints (Bottom Left) -->
-    <div class="map-controls-hint" id="mapControlsHint">
-      <span class="hint-key">🖱️ Orbit</span> Left-Drag 360°
-      <span class="hint-sep">•</span>
-      <span class="hint-key">📜 Zoom</span> Wheel
-      <span class="hint-sep">•</span>
-      <span class="hint-key">📐 Pan</span> Right-Drag
-      <span class="hint-sep">•</span>
-      <span class="hint-key">🎮 Move</span> WASD / Arrows
-      <span class="hint-sep">•</span>
-      <span class="hint-key">🎯 Stations</span> Click 3D Ring or [SPACE]
     </div>
 
     <!-- Map View Actions (Bottom Right) -->
@@ -85,9 +53,6 @@
       <button class="btn-glass" id="recenterMapBtn" title="Reset Camera to Center Apartment">
         ⛶ Center Map
       </button>
-      <button class="btn-glass btn-primary" id="openWorkstationFabBtn" title="Open PEAS Workstation">
-        📋 Workstation [SPACE]
-      </button>
     </div>
 
     <!-- Floating Live Simulation HUD (Bottom Center, for observing & testing) -->
@@ -96,9 +61,9 @@
         <span class="hud-status-dot running" id="hudStatusDot"></span>
         <span class="hud-status-text" id="hudStatusText">PAUSED</span>
         <span class="hud-tick-pill" id="hudTickText">Tick 0</span>
-        <div class="hud-task-badge" id="hudTaskBadge" title="Fixed mission">
+        <div class="hud-task-badge" id="hudTaskBadge" title="Current stage">
           <span id="hudTaskIcon">🧹</span>
-          <span id="hudTaskName">All six tasks</span>
+          <span id="hudTaskName">Stage 1 · Vacuum the floor</span>
         </div>
       </div>
 
@@ -112,23 +77,7 @@
         <button class="btn-hud-icon" id="hudResetBtn" title="Reset Simulation">↺</button>
       </div>
 
-      <div class="sim-hud-metrics">
-        <div class="hud-metric-item" data-score-definition="composite">
-          <span class="hud-metric-label">PEAS</span>
-          <span class="hud-metric-val" id="hudPeasScore">80.0</span>
-        </div>
-        <div class="hud-metric-item" data-score-definition="coverage">
-          <span class="hud-metric-label">Coverage</span>
-          <span class="hud-metric-val" id="hudCoverageScore">0%</span>
-        </div>
-        <div class="hud-metric-item" data-score-definition="safety">
-          <span class="hud-metric-label">Safety</span>
-          <span class="hud-metric-val" id="hudSafetyScore">100%</span>
-        </div>
-      </div>
-
-      <div class="hud-metric-item" data-score-definition="time"><span>Time</span><strong id="hud-time">—</strong></div>
-      <div class="hud-metric-item" data-score-definition="hazard"><span>Hazard</span><strong id="hud-hazard">—</strong></div>
+      <div id="hudCriteria" class="hud-criteria" aria-live="polite"></div>
 
       <!-- Quick Observation Controls -->
       <div class="sim-hud-stamps">
@@ -149,15 +98,8 @@
 
   <!-- 2. Floating Top Navigation Header -->
   <header class="app-header floating-header">
-    <div class="brand-section">
-      <span class="brand-logo">🤖</span>
-      <div>
-        <div class="brand-title">PEASLab2D</div>
-        <div class="brand-sub">Individual AI Agent Design • PEAS Framework</div>
-      </div>
-    </div>
-
     <!-- Step Navigation Tracker Pills (Click to open that step in modal) -->
+    <span id="stageProgress" class="stage-progress">Stage 1 of 2 · Vacuum the floor</span>
     <nav class="steps-nav-tracker" id="topStepsNav">
       <button class="step-nav-item active" data-step="1">
         <span class="step-icon">🎯</span> 1. Purpose (P)
@@ -178,9 +120,6 @@
 
     <!-- Header Action Controls -->
     <div class="header-actions">
-      <!-- Active Mission / Task Selector Dropdown -->
-      <div class="fixed-mission-badge">All six tasks</div>
-
       <!-- 360° View Mode Dropdown / Button Group -->
       <div class="view-mode-group">
         <button class="btn-mode" id="viewMode3DBtn" title="Interactive 3D 360° Orbit (Apartment.glb)">
@@ -189,9 +128,7 @@
         <button class="btn-mode" id="viewModeFpsBtn" title="First-Person 360° Walkthrough">
           🚶 FPS 360°
         </button>
-        <button class="btn-mode active" id="viewMode2DBtn" title="2D Blueprint (360° Rotatable)">
-          📐 2D Map
-        </button>
+
       </div>
 
       <!-- Robot POV Quick Button -->

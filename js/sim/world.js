@@ -174,12 +174,12 @@ export class ApartmentWorld {
       { id: 'FOOD_1', type: 'FOOD', name: 'Cat Food Bowl', x: 290, y: 780, carried: false, disposed: false, icon: '🥣' }
     ];
 
-    // Operator Avatar (Controlled by Arrow Keys / WASD)
+    // Fixed living-room entry pose (WASD / arrows remain available).
     this.avatar = {
-      x: 520,
-      y: 480,
+      x: 130,
+      y: 645,
       radius: 18,
-      heading: -Math.PI / 2,
+      heading: -0.662,
       speed: 3.8,
       moving: false,
       targetX: null,

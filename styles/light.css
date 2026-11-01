@@ -1,0 +1,111 @@
+/* Default light theme; layout, task state and interaction colors stay intact. */
+:root {
+  color-scheme: light;
+  --bg-main: #edf3f8;
+  --bg-card: #ffffff;
+  --bg-card-glass: rgba(255, 255, 255, .96);
+  --border-color: #cbd5e1;
+  --border-highlight: #0284c7;
+  --text-main: #1e293b;
+  --text-muted: #526277;
+}
+
+body { accent-color: #0369a1; }
+button:disabled { opacity: .6; }
+button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-visible,
+.slot-container:focus-visible { outline: 3px solid #0284c7; outline-offset: 3px; }
+.fullscreen-house-container { background: #eaf0f5; }
+.app-header.floating-header, .sim-floating-hud, .btn-glass,
+.robot-pov-toolbar, .glb-loading-box {
+  background: var(--bg-card-glass);
+  color: var(--text-main);
+  border-color: var(--border-color);
+  box-shadow: 0 6px 24px rgba(30, 55, 80, .14);
+}
+.view-mode-group, .modal-step-tabs, .hud-speed-group, .hud-tick-pill,
+.loading-progress-bar { background: #edf2f7; border-color: var(--border-color); }
+.step-nav-item { background: #f1f5f9; border-color: var(--border-color); color: #526277; }
+.step-nav-item:hover, .btn-mode:hover, .modal-tab-btn:hover, .btn-glass:hover,
+.btn-hud-icon:hover, .btn-outline:hover, .btn-ghost:hover { background: #e0f2fe; color: #075985; }
+.step-nav-item.active, .btn-mode.active, .modal-tab-btn.active,
+.hud-speed-btn.active, .palette-tabs button[aria-selected="true"] {
+  background: #0369a1;
+  color: #fff;
+  border-color: #0369a1;
+  box-shadow: 0 2px 6px rgba(3, 105, 161, .18);
+}
+.open-workstation-btn, .btn-primary, .btn-primary-glass { background: #0369a1; border-color: #0369a1; box-shadow: none; }
+.open-workstation-btn:hover, .btn-primary:hover, .btn-primary-glass:hover { background: #075985; box-shadow: none; }
+.btn-glass.btn-highlight { background: #e0f2fe; color: #075985; border-color: #7dd3fc; }
+.btn-glass.btn-highlight:hover { background: #bae6fd; color: #075985; }
+.btn-hud-icon, .btn-secondary { background: #eef2f7; color: #334155; border-color: var(--border-color); }
+.btn-secondary:hover { background: #dbe5ef; color: #1e293b; }
+.hud-status-text, .loading-text, .canvas-header h3, .palette-header h4,
+.modal-header-meta h2, .step-header h2, .robot-pov-toolbar { color: var(--text-main); }
+.stage-progress, .modal-badge-step, .hud-metric-val { color: #0369a1; }
+.v6-step>p, .mounting-editor>p, .module-card span:last-child, .mount-gate,
+.palette-block-card .card-desc, .palette-shelf h4, .attempt-count,
+.single-stamp time, .v6-step dt, .task-outcome-summary, .elapsed-observation,
+.robot-pov-toolbar span { color: var(--text-muted); }
+
+.step-modal-overlay, .glb-loading-overlay { background: rgba(80, 100, 120, .22); }
+.testing-layout { background: transparent; }
+.step-modal-dialog, .testing-layout .step-modal-dialog {
+  background: var(--bg-card);
+  border-color: var(--border-color);
+  box-shadow: 0 16px 48px rgba(30, 55, 80, .18);
+}
+.step-modal-header { background: #f8fafc; }
+.modal-close-btn { background: #fff1f2; color: #b91c1c; border-color: #fecdd3; }
+.modal-close-btn:hover { background: #ffe4e6; color: #991b1b; }
+.purpose-task, .stage-summary { border-color: var(--border-color); }
+.v6-step textarea, .observation-input input, .run-step select, .rule-row-header select {
+  background: #fff; color: var(--text-main); border: 1px solid #b8c7d7;
+}
+input::placeholder, textarea::placeholder { color: #64748b; opacity: 1; }
+.v6-step input[type="radio"] { margin-right: 4px; }
+
+.mounting-assembly, .block-palette-column, .rule-trace, .trace-panel,
+.sim-control-bar, .reflection-panel { background: #f5f8fc; border-color: var(--border-color); }
+.module-card, .palette-block-card, .task-zone-card {
+  background: #fff; color: var(--text-main); border-color: var(--border-color);
+}
+.module-card:hover, .palette-block-card:hover { background: #f0f9ff; border-color: #0284c7; }
+.module-card.mounted, .module-card.selected, .palette-block-card.selected {
+  background: #eff8ff; border-color: #0284c7; outline-color: #0284c7; box-shadow: none;
+}
+.mount-point { background: #fff; color: #526277; border-color: #94a3b8; }
+.mount-point.mounted { background: #e0f2fe; color: #075985; border-color: #0284c7; }
+.sensor-robot-preview .sensor-silhouette { background: #e5edf5; color: #526277; }
+.attached-sensor { color: #075985; }
+.task-reference-strip span { color: #526277; border-color: var(--border-color); }
+.palette-tabs { border-color: var(--border-color); }
+.palette-tabs button { background: #edf2f7; color: #475569; border-color: var(--border-color); }
+.slot-container { background: #f8fafc; border-color: #94a3b8; }
+.slot-container:hover { background: #eaf6ff; border-color: #0284c7; }
+.slot-label, .empty-placeholder, .empty-placeholder.optional-hint { color: #526277; }
+.task-number { color: #075985; background: #e0f2fe; }
+.block-card { box-shadow: 0 1px 3px rgba(30, 55, 80, .1); }
+.block-card.kind-sense { background: #dff1ff; color: #075985; }
+.block-card.kind-condition { background: #fef0cd; color: #854d0e; }
+.block-card.kind-action, .slot-secondaryAction .block-card { background: #dcfce7; color: #166534; }
+.block-card.kind-control { background: #ede9fe; color: #5b21b6; }
+.palette-block-card.kind-sense { border-left: 4px solid #0284c7; }
+.palette-block-card.kind-condition { border-left: 4px solid #b77908; }
+.palette-block-card.kind-action { border-left: 4px solid #15803d; }
+.palette-block-card.kind-control { border-left: 4px solid #7c3aed; }
+.clear-slot-btn { background: #e2e8f0; color: #334155; }
+.clear-slot-btn:hover { background: #cbd5e1; color: #0f172a; }
+.rule-row.pulse-active { background: #f0fdf4; box-shadow: 0 0 0 1px #22c55e; }
+#ruleApartmentPreview { background: #edf3f8; border: 1px solid var(--border-color); }
+.criteria-table thead { background: #edf3f8; }
+.task-outcome[data-status="done"] { background: #f0fdf4; border-color: #86b89a; }
+.task-outcome[data-status="failed"] { background: #fff1f2; border-color: #e7a2ab; }
+.task-outcome[data-status="in_progress"] { background: #eff8ff; border-color: #7db7dc; }
+.reflection-panel { box-shadow: 0 8px 24px rgba(30, 55, 80, .15); }
+.robot-sensor-backdrop { background: #edf3f8; }
+.robot-sensor-channels {
+  position: absolute; left: 16px; top: 80px; padding: 12px;
+  background: var(--bg-card-glass); color: var(--text-main);
+  border: 1px solid var(--border-color); border-radius: 8px; pointer-events: none;
+}

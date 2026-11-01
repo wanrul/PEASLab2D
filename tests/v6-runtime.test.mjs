@@ -5,15 +5,17 @@ import { SessionLogger } from '../js/logging/session-log.js';
 import { SimulationEngine } from '../js/sim/engine.js';
 import { ApartmentWorld } from '../js/sim/world.js';
 
-test('empty design, physical capacities, numeric gates and unlocked revisits', () => {
+test('empty design, physical capacities, task priority gate and unlocked revisits', () => {
   const s = new appState.constructor();
-  assert.deepEqual(s.selectedTasks, ['TASK_1','TASK_2','TASK_3','TASK_4','TASK_5','TASK_6']);
+  assert.deepEqual(s.selectedTasks, ['TASK_1']);
   assert.equal(s.installedSensors.size, 0);
   assert.equal(s.installedActuators.size, 0);
   assert.ok(s.rules.every(r => Object.values(r.slots).every(v => v === null)));
   assert.equal(s.setStep(4), false);
+  assert.equal(s.setStep(2), false);
+  s.setTaskPriority('TASK_1','thorough');
   assert.equal(s.setStep(2), true);
-  assert.equal(s.setStep(3), false);
+  assert.equal(s.canContinue(2), true);
   for(let i=1;i<=11;i++) s.toggleSensor(`SENSE_${String(i).padStart(2,'0')}`);
   assert.equal(s.toggleSensor('SENSE_12').success, false);
   assert.equal(s.setStep(3), true);
@@ -42,7 +44,7 @@ test('CSV contains exactly five fields and escapes quoted multiline notes', () =
   assert.ok(!log.exportCSV().includes('ParticipantID'));
 });
 
-test('empty rules stay idle, formula uses /100, preview is excluded from run history', () => {
+test('empty rules stay idle, private diagnostics are isolated, preview is excluded from run history', () => {
   appState.rules.forEach(r => Object.keys(r.slots).forEach(k => r.slots[k] = null));
   const engine = new SimulationEngine(new ApartmentWorld());
   assert.equal(engine.evaluateRules({}), null);
@@ -62,10 +64,12 @@ test('empty rules stay idle, formula uses /100, preview is excluded from run his
   engine.start(); engine.stop();
   engine.runLimitSeconds = 0.1;
   engine.tick(); engine.tick();
-  assert.equal(prompts, 1);
+  assert.equal(prompts, 0);
   const snapshot = engine.endRun();
+  assert.equal(prompts, 1);
   assert.equal(appState.runHistory.length, count+1);
-  assert.equal(snapshot.total, snapshot.scores.composite);
+  assert.equal(snapshot.passed,false);
+  assert.equal('scores' in snapshot,false);
   assert.deepEqual(snapshot.tasksCompleted, []);
   assert.equal(engine.endRun(), null);
   off();
@@ -117,18 +121,19 @@ test('preview restores entity identities, world values, counters and speed stays
   engine.endRun();
 });
 
-test('run end logs step five, clears reflection, and finished sessions cannot start', () => {
+test('run end logs step five, replaces stale reflection once, and finished sessions cannot start', () => {
   appState.sessionFinished = false;
   const engine = new SimulationEngine(new ApartmentWorld()), logger = new SessionLogger(appState);
   let cleared = 0;
   const off = appState.on('reflectionSelected', e => { if(e.cleared) cleared++; });
   engine.start(); engine.stop();
+  cleared = 0;
   appState.reflectionPrompt = { shownAt: Date.now() };
   appState.currentStep = 2;
   engine.endRun('revision');
-  assert.equal(appState.reflectionPrompt, null);
-  assert.equal(logger.events.at(-1).event, 'RUN_ENDED');
-  assert.equal(logger.events.at(-1).step, 5);
+  assert.equal(appState.reflectionPrompt.runId,1);
+  const ended=logger.events.findLast(e=>e.event==='RUN_ENDED');
+  assert.equal(ended.step, 5);
   assert.equal(cleared, 1);
   appState.reflectionPrompt = {};
   engine.reset();

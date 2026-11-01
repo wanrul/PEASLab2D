@@ -1,14 +1,15 @@
 /**
  * CollabPEAS - 10Hz Simulation Engine & Rule Evaluator
- * Evaluates all decision rules across six tasks on every tick.
- * Updates robot motion, cat wandering, sensor perceptions, and PEAS scores.
+ * Evaluates unlocked task rules and factual criterion evidence.
+ * Keeps legacy private score diagnostics separate from pilot feedback and passage.
  */
 
 import { appState } from '../state.js';
 import { ACTION_BLOCKS, CONDITION_BLOCKS, SENSE_BLOCKS } from '../data/blocks.js';
 import { sound } from '../view/audio.js';
+import { STAGE_CRITERIA, criterionDescriptions } from '../pilot-config.js';
 
-// Researcher configuration: 120 simulation seconds is provisional and uncalibrated.
+// Private legacy diagnostics only. Active pilot criteria are in pilot-config.js.
 export const SCORE_CONSTANTS = Object.freeze({ dirtShare: 0.7, objectShare: 0.3, catPenalty: 8, humanPenalty: 5, liquidPenalty: 25, runLimitSeconds: 120, waitTicks: 20 });
 export const scoreDefinitions = Object.freeze({
   coverage: '70% cleaned dirt cells + 30% correctly sorted objects.',
@@ -19,8 +20,9 @@ export const scoreDefinitions = Object.freeze({
 });
 
 export class SimulationEngine {
-  constructor(world, { runLimitSeconds = SCORE_CONSTANTS.runLimitSeconds } = {}) {
+  constructor(world, { runLimitSeconds = SCORE_CONSTANTS.runLimitSeconds, criteria = STAGE_CRITERIA } = {}) {
     this.world = world;
+    this.criteria = criteria;
     this.runLimitSeconds = runLimitSeconds;
     this.scoreDefinitions = { ...scoreDefinitions, time: `100 within ${runLimitSeconds} simulation seconds; minus 100 × overtime / ${runLimitSeconds} afterward. Provisional, uncalibrated pilot limit.` };
     this.runId = 0;
@@ -56,6 +58,7 @@ export class SimulationEngine {
     this.reachedDock = false;
     this.dockedAtBattery = null;
     this.completionSeconds = null;
+    this.functionalCompletionSeconds = null;
     this.activeRuleFired = null;
     this.lastAction = null;
     this.lastTrace = { sense: null, decide: null, act: null };
@@ -63,6 +66,7 @@ export class SimulationEngine {
     this.reflexTicks = 0;
     this.navigationGrid = null;
     this.navigationRoute = null;
+    this.perceivedObjects = new Map();
     this.tickStart = null;
     this.explicitMotion = false;
     this.finalOutcomes = false;
@@ -76,22 +80,16 @@ export class SimulationEngine {
     if (!options.preview && this.previewActive) this.stopPreview();
     if (this.tickInterval) return;
     if (!options.preview && !this.runActive) {
-      this.pendingThen = [];
-      this.ruleRuntime = {};
-      this.elapsedSeconds = 0;
-      this.completionSeconds = null;
-      this.computeScores();
+      this.world.reset();
+      this.resetRuntime();
+      appState.simTick = 0;
       this.runActive = true;
       this.runId++;
-      this.firedTasks = new Set();
-      this.runStartTick = this.tickCount;
-      this.elapsedSeconds = 0;
-      this.completionSeconds = null;
-      this.finalOutcomes = false;
-      this.runBaseline = { ...this.scores };
-      this.reflectionShown = false;
-      appState.reflectionPrompt = null;
-      appState.record('RUN_STARTED', String(this.runId), { scores: { ...this.scores }, weights: { ...appState.weights } });
+      this.runStageId = appState.currentStage;
+      this.runConfiguration = appState.getConfiguration();
+      this.runBaseline = { ...this.scores }; // Private legacy diagnostic only.
+      this.clearReflection();
+      appState.record('RUN_STARTED', String(this.runId), { runId: this.runId, configuration: this.runConfiguration, criteria: { ...this.criteria[this.runStageId] } }, 5);
     }
     appState.simRunning = true;
     const intervalMs = 1000 / (this.tickRateHz * appState.simSpeed);
@@ -157,19 +155,32 @@ export class SimulationEngine {
   endRun(reason = 'finish') {
     this.stopPreview();
     this.stop();
-    this.clearReflection();
     if (!this.runActive) return null;
+    this.clearReflection();
     this.updateOutcomes(true);
     this.computeScores();
     const tasksCompleted = this.taskOutcomes.filter(t => t.status === 'done').map(t => t.taskId);
-    const snapshot = { runId: this.runId, scores: { ...this.scores }, total: this.scores.composite,
-      baseline: { ...this.runBaseline }, tasksCompleted, outcomes: structuredClone(this.taskOutcomes), tick: this.tickCount, reason,
-      counters: { dirtCleaned: this.world.dirtCells.filter(d=>d.cleaned).length, dirtTotal: this.world.dirtCells.length, objectsSorted: this.world.objects.filter(o=>o.sorted).length, objectsTotal: this.world.objects.length, spillsMopped: this.world.wetCells.filter(w=>w.cleaned).length, spillsTotal: this.world.wetCells.length, pickups: this.pickups, releases: this.releases, wrongReleases: this.wrongReleases, catNearMisses: this.catSafetyViolations, fastPersonPasses: this.humanSafetyViolations, vacuumSpillEvents: this.vacuumLiquidMistakes },
-      elapsedSeconds: this.elapsedSeconds, durationMs: this.elapsedSeconds * 1000, weights: { ...appState.weights } };
-    appState.runHistory.push(snapshot);
+    const snapshot = { runId: this.runId, stageId: this.runStageId, taskIds: [...appState.selectedTasks],
+      passed: this.criteriaResults.every(criterion => criterion.status === 'Achieved'),
+      criteria: structuredClone(this.criteriaResults), criteriaSettings: { ...this.criteria[this.runStageId] },
+      configuration: structuredClone(this.runConfiguration), tasksCompleted,
+      outcomes: structuredClone(this.taskOutcomes), tick: this.tickCount, reason,
+      counters: { dirtCleaned: this.world.dirtCells.filter(d=>d.cleaned).length, dirtTotal: this.world.dirtCells.length,
+        ...(appState.selectedTasks.includes('TASK_2') ? { objectsSorted: this.world.objects.filter(o=>o.sorted).length, objectsTotal: this.world.objects.length, pickups: this.pickups, releases: this.releases, wrongReleases: this.wrongReleases } : {}),
+        catNearMisses: this.catSafetyViolations, fastPersonPasses: this.humanSafetyViolations, vacuumSpillEvents: this.vacuumLiquidMistakes },
+      elapsedSeconds: this.elapsedSeconds, durationMs: this.elapsedSeconds * 1000 };
+    appState.retainRun(snapshot);
     appState.record('RUN_ENDED', String(this.runId), snapshot, 5);
     appState.notify('runEnded', snapshot);
     this.runActive = false;
+    if (!snapshot.passed && !this.reflectionShown) {
+      this.reflectionShown = true;
+      const prompt = { runId: this.runId, stageId: this.runStageId, taskIds: snapshot.taskIds,
+        unmet: snapshot.criteria.filter(c => c.status !== 'Achieved').map(c => c.label), shownAt: Date.now() };
+      appState.reflectionPrompt = prompt;
+      appState.record('REFLECTION_SHOWN', String(this.runId), prompt, 5);
+      appState.notify('reflectionNeeded', prompt);
+    }
     return snapshot;
   }
 
@@ -183,6 +194,7 @@ export class SimulationEngine {
 
   reset() {
     this.endRun('reset');
+    this.clearReflection();
     this.world.reset();
     this.finalOutcomes = false;
     this.resetRuntime();
@@ -206,19 +218,12 @@ export class SimulationEngine {
     if (decision) {
       const executed = this.executeAction(decision);
       if (executed !== false) this.firedTasks.add(decision.taskId);
-      appState.record('RULE_FIRED', decision.ruleId, { tick: this.tickCount, taskId: decision.taskId, ruleId: decision.ruleId, ...decision.trace, executed: executed !== false });
+      appState.record('RULE_FIRED', decision.ruleId, { tick: this.tickCount, runId: this.runActive ? this.runId : null, preview: Boolean(this.previewActive), taskId: decision.taskId, ruleId: decision.ruleId, ...decision.trace, executed: executed !== false });
     } else this.lastAction = null;
     this.drive(percepts);
     this.updateRobotPhysics();
     this.updateOutcomes();
     this.computeScores();
-    if (this.runActive && !this.reflectionShown && ['coverage','safety','time','hazard'].some(k => this.scores[k] < this.runBaseline[k])) {
-      this.reflectionShown = true;
-      const behavior = this.vacuumLiquidMistakes ? 'vacuumed liquid' : this.catSafetyViolations ? 'moved too close to the cat' : this.humanSafetyViolations ? 'moved too fast near a person' : 'exceeded the run time limit';
-      const prompt = { behavior, baseline: { ...this.runBaseline }, scores: { ...this.scores }, runId: this.runId, shownAt: Date.now() };
-      appState.reflectionPrompt = prompt;
-      appState.notify('reflectionNeeded', prompt);
-    }
     appState.notify('tick', { tick: this.tickCount, scores: this.scores, outcomes: this.taskOutcomes, percepts, robot, cat: this.world.cat, avatar: this.world.avatar });
   }
 
@@ -378,6 +383,10 @@ export class SimulationEngine {
       }).sort((a,b) => Math.hypot(a.x-robot.x,a.y-robot.y)-Math.hypot(b.x-robot.x,b.y-robot.y))[0];
       percepts.SENSE_15 = visible ? visible.type : 'NONE';
       percepts.visibleObject = visible;
+      if (appState.selectedTasks.includes('TASK_2')) {
+        if (visible) this.perceivedObjects.set(visible.id, { id:visible.id, x:visible.x, y:visible.y, type:visible.type });
+        percepts.rememberedObjects = [...this.perceivedObjects.values()];
+      }
     } else {
       percepts.SENSE_15 = 'NOT_INSTALLED';
     }
@@ -401,9 +410,9 @@ export class SimulationEngine {
   }
 
   destination() {
-    if (this.dockRequested) return { ...this.world.dock, target: 'DOCK' };
+    if (appState.selectedTasks.includes('TASK_6') && this.dockRequested) return { ...this.world.dock, target: 'DOCK' };
     const obj = this.world.robot.heldObject;
-    if (obj) return { ...(obj.type === 'TRASH' ? this.world.smartBin : this.world.depositTable), target: obj.type === 'TRASH' ? 'BIN' : 'SINK' };
+    if (appState.selectedTasks.includes('TASK_2') && obj) return { ...(obj.type === 'TRASH' ? this.world.smartBin : this.world.depositTable), target: obj.type === 'TRASH' ? 'BIN' : 'SINK' };
     return null;
   }
 
@@ -420,7 +429,7 @@ export class SimulationEngine {
       COND_12: p.SENSE_09 === 'NEAR', COND_13: p.SENSE_09 === 'CLEAR',
       COND_14: p.SENSE_08 === 'GRIPPING', COND_15: p.SENSE_08 === 'EMPTY',
       COND_16: p.SENSE_15 === 'TRASH', COND_17: ['CUP','FOOD'].includes(p.SENSE_15),
-      COND_18: Number(p.SENSE_12) > this.runLimitSeconds,
+      COND_18: Number.isFinite(this.criteria[appState.currentStage].speedLimitSeconds) && Number(p.SENSE_12) > this.criteria[appState.currentStage].speedLimitSeconds,
       COND_19: p.SENSE_14 === 'EDGE DETECTED', COND_20: typeof p.SENSE_11 === 'number' && p.SENSE_11 > 0
     })[condition] || false;
   }
@@ -437,7 +446,7 @@ export class SimulationEngine {
     let inspected = null;
     for (let i=0; i<appState.rules.length; i++) {
       const rule = appState.rules[i], { sense, condition, action, control } = rule.slots;
-      if (!sense || !action) continue;
+      if (!appState.selectedTasks.includes(rule.taskId) || !sense || !action) continue;
       if (!appState.installedSensors.has(sense)) {
         inspected ||= { sense: `${SENSE_BLOCKS.find(b=>b.id===sense)?.name || sense} — not mounted`, decide: 'Rule did not fire', act: null };
         delete this.ruleRuntime[rule.id];
@@ -449,12 +458,12 @@ export class SimulationEngine {
       if (control === 'CTRL_03' && this.tickCount-this.ruleRuntime[rule.id].since < SCORE_CONSTANTS.waitTicks) {
         inspected ||= { sense, decide: 'Waiting 2 seconds', act: null }; continue;
       }
-      candidates.push({ ruleIndex:i, ruleId:rule.id, taskId:rule.taskId, taskName:rule.taskName, action, priority:control==='CTRL_05'?10:1, trace:{sense,condition,action,control,ruleId:rule.id,taskId:rule.taskId} });
+      candidates.push({ ruleIndex:i, ruleId:rule.id, taskId:rule.taskId, taskName:rule.taskName, action, priority:rule.slots.priority==='CTRL_05'?10:1, trace:{sense,condition,action,control,ruleId:rule.id,taskId:rule.taskId} });
     }
     this.pendingThen = this.pendingThen.filter(q => {
       q.ruleIndex = appState.rules.findIndex(rule => rule.id === q.ruleId);
       const slots = appState.rules[q.ruleIndex]?.slots;
-      return Boolean(slots) && JSON.stringify(slots) === q.signature && appState.installedSensors.has(slots.sense);
+      return Boolean(slots) && appState.selectedTasks.includes(appState.rules[q.ruleIndex].taskId) && JSON.stringify(slots) === q.signature && appState.installedSensors.has(slots.sense);
     });
     for (const queued of this.pendingThen) {
       if (queued.due <= this.tickCount) candidates.push(queued);
@@ -502,7 +511,7 @@ export class SimulationEngine {
         robot.gripperClosed = true;
         if (robot.armExtended && !robot.heldObject) {
           const obj = this.world.objects.filter(o=>!o.carried&&!o.disposed&&Math.hypot(o.x-robot.x,o.y-robot.y)<45).sort((a,b)=>Math.hypot(a.x-robot.x,a.y-robot.y)-Math.hypot(b.x-robot.x,b.y-robot.y))[0];
-          if (obj) { robot.heldObject=obj; obj.carried=true; this.pickups++; }
+          if (obj) { robot.heldObject=obj; obj.carried=true; this.perceivedObjects.delete(obj.id); this.pickups++; }
         }
         break;
       }
@@ -515,7 +524,10 @@ export class SimulationEngine {
           Object.assign(obj,{x:robot.x,y:robot.y,carried:false,disposed:correct,sorted:correct});
           this.releases++;
           if (correct && obj.type==='TRASH') this.world.smartBin.isOpen = true;
-          if (!correct) this.wrongReleases++;
+          if (!correct) {
+            this.wrongReleases++;
+            this.perceivedObjects.set(obj.id, { id:obj.id, x:obj.x, y:obj.y, type:obj.type });
+          }
           robot.heldObject=null;
         }
         break;
@@ -558,11 +570,14 @@ export class SimulationEngine {
     const r = this.world.robot;
     if (!this.canDrive() || r.isStopped || this.explicitMotion) return;
     let targets = [];
-    if (p.SENSE_03?.target) targets = [p.SENSE_03];
+    if (p.SENSE_03?.target && ((appState.selectedTasks.includes('TASK_2') && ['BIN','SINK'].includes(p.SENSE_03.target)) || (appState.selectedTasks.includes('TASK_6') && p.SENSE_03.target==='DOCK'))) targets = [p.SENSE_03];
     else {
-      if (p.mapDirt) targets.push(...p.mapDirt);
-      if (p.mapWet) targets.push(...p.mapWet);
-      if (p.visibleObject && !r.heldObject) targets.push(p.visibleObject);
+      if (appState.selectedTasks.includes('TASK_1') && p.mapDirt) targets.push(...p.mapDirt);
+      if (appState.selectedTasks.includes('TASK_3') && p.mapWet) targets.push(...p.mapWet);
+      if (appState.selectedTasks.includes('TASK_2') && !r.heldObject) {
+        if (p.visibleObject) targets.push(p.visibleObject);
+        if (appState.installedSensors.has('SENSE_15') && p.rememberedObjects) targets.push(...p.rememberedObjects);
+      }
       // Underfoot channels never reveal distant cells.
     }
     // Keep a still-perceived goal while following its doorway route: switching
@@ -662,6 +677,11 @@ export class SimulationEngine {
     const cleaned=dirt.filter(d=>d.cleaned).length,sorted=objects.filter(o=>o.sorted).length,mopped=wet.filter(w=>w.cleaned).length;
     const done=[dirt.length>0&&cleaned===dirt.length,objects.length>0&&sorted===objects.length,wet.length>0&&mopped===wet.length,
       this.catOpportunities>0&&this.catResponses>=this.catOpportunities&&this.movingTicks>0&&this.catSafetyViolations===0,this.humanOpportunities>0&&this.humanResponses>=this.humanOpportunities&&this.movingTicks>0&&this.humanSafetyViolations===0,this.dockedAtBattery!==null];
+    this.updateCriteria();
+    // Functional criterion settings govern task completion; Speed stays separate.
+    for (const { taskId, status } of this.criteriaResults) {
+      if (taskId) done[Number(taskId.slice(5)) - 1] = status === 'Achieved';
+    }
     const started=[this.vacuumTicks>0,this.pickups>0,this.mopTicks>0,this.catOpportunities>0,this.humanOpportunities>0,this.dockRequested||this.reachedDock];
     const failed=[false,this.wrongReleases>0,false,this.catSafetyViolations>0,this.humanSafetyViolations>0,this.world.robot.battery<=0&&!done[5]];
     const summaries=[this.vacuumLiquidMistakes?`Vacuumed on a spill ${this.vacuumLiquidMistakes} times.`:!this.vacuumTicks?'Never vacuumed.':!cleaned?'Vacuum ran but nothing was cleaned.':`Cleaned ${cleaned} of ${dirt.length} dirty cells.`,
@@ -670,11 +690,32 @@ export class SimulationEngine {
       this.catSafetyViolations?`Kept moving with the cat within reach ${this.catSafetyViolations} times.`:done[3]?'Stopped for the cat every time.':this.catOpportunities?'Moved near the cat without stopping.':'No moving encounter with the cat.',
       this.humanSafetyViolations?`Passed the person at full speed ${this.humanSafetyViolations} times.`:done[4]?'Slowed down for the person every time.':this.humanOpportunities?'Moved near the person without slowing.':'No moving encounter with the person.',
       done[5]?`Docked at ${Math.round(this.dockedAtBattery)}% battery.`:failed[5]?'Battery ran out before docking.':this.reachedDock?'Reached the dock but never connected.':'Never approached the dock.'];
-    this.taskOutcomes=done.map((success,i)=>({taskId:`TASK_${i+1}`,status:success&&(!(i===3||i===4)||final)?'done':failed[i]||final?'failed':started[i]?'in_progress':'not_started',summary:summaries[i]}));
-    const attempted=appState.getAttemptedTaskIds().map(taskId=>Number(taskId.slice(5))-1);
-    const allDone=attempted.length>0&&attempted.every(i=>done[i]);
+    this.taskOutcomes=done.map((success,i)=>({taskId:`TASK_${i+1}`,status:success&&(!(i===3||i===4)||final)?'done':failed[i]||final?'failed':started[i]?'in_progress':'not_started',summary:summaries[i]})).filter(outcome => appState.selectedTasks.includes(outcome.taskId));
+    const allDone=this.criteriaResults.every(c=>c.status==='Achieved');
     if(!allDone) this.completionSeconds=null;
     else if(this.runActive && this.completionSeconds===null)this.completionSeconds=this.elapsedSeconds;
+  }
+
+  updateCriteria() {
+    const config = this.criteria[appState.currentStage];
+    const counts = {
+      cleaning: [this.world.dirtCells.filter(d => d.cleaned).length, this.world.dirtCells.length, config.dirtFraction],
+      sorting: [this.world.objects.filter(o => o.sorted).length, this.world.objects.length, config.sortedFraction]
+    };
+    const functionalDone = counts.cleaning[1] > 0 && counts.cleaning[0] / counts.cleaning[1] >= config.dirtFraction &&
+      (appState.currentStage !== 2 || (counts.sorting[1] > 0 && counts.sorting[0] / counts.sorting[1] >= config.sortedFraction));
+    if (!functionalDone) this.functionalCompletionSeconds = null;
+    else if (this.runActive && this.functionalCompletionSeconds == null) this.functionalCompletionSeconds = this.elapsedSeconds;
+    this.criteriaResults = criterionDescriptions(appState.currentStage, this.criteria).map(criterion => {
+      if (criterion.id === 'speed') {
+        const duration = this.functionalCompletionSeconds ?? this.elapsedSeconds;
+        return { ...criterion, observed: `${duration.toFixed(1)} seconds${functionalDone ? ' to complete tasks' : ' elapsed; tasks incomplete'}`,
+          status: functionalDone && duration <= config.speedLimitSeconds ? 'Achieved' : 'Not achieved' };
+      }
+      const [count, total, fraction] = counts[criterion.id];
+      return { ...criterion, observed: `${count} / ${total} ${criterion.id === 'cleaning' ? 'dirt cells cleaned' : 'objects correctly sorted'}`,
+        status: total > 0 && count / total >= fraction ? 'Achieved' : count > 0 ? 'Partially achieved' : 'Not achieved' };
+    });
   }
 
   computeScores() {

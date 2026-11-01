@@ -38,8 +38,8 @@ export class RobotPovRenderer {
         <div><strong>🤖 Robot POV</strong><span>Esc to exit</span></div>
         <button class="btn btn-primary close-pov-btn">Exit Robot POV</button>
       </div>
-      <div class="robot-sensor-backdrop" style="position:absolute;inset:64px 0 0;background:#07111f;pointer-events:none"></div>
-      <div class="robot-sensor-channels" style="position:absolute;left:16px;top:80px;padding:12px;background:rgba(7,17,31,.92);color:white;pointer-events:none"></div>`;
+      <div class="robot-sensor-backdrop"></div>
+      <div class="robot-sensor-channels"></div>`;
     this.container.style.display = 'block';
     this.container.querySelector('.close-pov-btn').addEventListener('click', () => this.exit());
     this.updateChannels();

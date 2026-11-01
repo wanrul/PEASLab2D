@@ -8,11 +8,11 @@ import { Apartment3DMap } from '../js/view/map-3d.js';
 import { HouseCanvasRenderer } from '../js/view/house-canvas.js';
 import * as THREE from '../lib/three/three.module.js';
 
-test('task strip keeps six live statuses and end summaries remain on final summary',t=>{
+test('task strip keeps unlocked live statuses and stage end summaries remain on final summary',t=>{
   const prior=globalThis.window;const engine=new SimulationEngine(new ApartmentWorld());globalThis.window={simEngine:engine};t.after(()=>globalThis.window=prior);
-  const view=Object.create(StepsView.prototype);assert.match(view.renderTaskOutcomes(),/Never approached the dock/);assert.equal((view.renderTaskOutcomes().match(/data-task-id=/g)||[]).length,6);
+  const view=Object.create(StepsView.prototype);assert.match(view.renderTaskOutcomes(),/Never vacuumed/);assert.equal((view.renderTaskOutcomes().match(/data-task-id=/g)||[]).length,1);
   engine.world.dirtCells.forEach(d=>d.cleaned=true);engine.vacuumTicks=1;engine.updateOutcomes(true);assert.match(view.renderTaskOutcomes(),/data-status="done"/);
-  const old=appState.runHistory;appState.runHistory=[{scores:engine.scores,outcomes:engine.taskOutcomes,tasksCompleted:['TASK_1']}];t.after(()=>appState.runHistory=old);
+  const old=appState.runHistory;appState.runHistory=[{stageId:1,passed:true,criteria:engine.criteriaResults,elapsedSeconds:0,outcomes:engine.taskOutcomes,tasksCompleted:['TASK_1']}];t.after(()=>appState.runHistory=old);
   view.panel={innerHTML:'',querySelector(){return {};}};view.showFinalSummaryModal();assert.match(view.panel.innerHTML,/Cleaned 17 of 17 dirty cells/);
 });
 test('3D LED follows selected catalog color, independent of vacuum or slow flags',()=>{

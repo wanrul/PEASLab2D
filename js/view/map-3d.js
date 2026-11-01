@@ -52,7 +52,7 @@ export class Apartment3DMap {
   // -------------------------------------------------------------
   initScene() {
     this.scene = new THREE.Scene();
-    this.scene.background = new THREE.Color(0x060913); // dark sci-fi research background
+    this.scene.background = new THREE.Color(0xeaf0f5);
 
     // Perspective Camera for natural 3D depth and 360° exploration
     const aspect = this.canvas.clientWidth / this.canvas.clientHeight || 1;
@@ -78,9 +78,30 @@ export class Apartment3DMap {
   }
 
   initLighting() {
+    // Local daylight reflection keeps imported metal/wood finishes from going black.
+    const environment = document.createElement('canvas');
+    environment.width = 512;
+    environment.height = 256;
+    const context = environment.getContext('2d');
+    const daylight = context.createLinearGradient(0, 0, 0, 256);
+    daylight.addColorStop(0, '#eaf4ff');
+    daylight.addColorStop(0.45, '#ffffff');
+    daylight.addColorStop(1, '#b8a58e');
+    context.fillStyle = daylight;
+    context.fillRect(0, 0, 512, 256);
+    const texture = new THREE.CanvasTexture(environment);
+    texture.mapping = THREE.EquirectangularReflectionMapping;
+    texture.colorSpace = THREE.SRGBColorSpace;
+    const generator = new THREE.PMREMGenerator(this.renderer);
+    this.environmentTarget = generator.fromEquirectangular(texture);
+    this.scene.environment = this.environmentTarget.texture;
+    texture.dispose();
+    generator.dispose();
+
     // Soft balanced ambient illumination for interior viewing
     const ambientLight = new THREE.AmbientLight(0xffffff, 0.9);
     this.scene.add(ambientLight);
+    this.scene.add(new THREE.HemisphereLight(0xf4f9ff, 0xd9cbbb, 0.35));
 
     // Directional architectural sun light
     const dirLight = new THREE.DirectionalLight(0xfff5e6, 1.4);
@@ -163,18 +184,16 @@ export class Apartment3DMap {
       }
     };
 
-    // User can cancel and jump straight to 2D map at any time
+    // Dismiss loading without changing the selected view.
     cancelBtn?.addEventListener('click', () => {
       hideOverlay();
-      window.switchViewMode?.('2d');
     });
 
-    // Safety timeout: auto-dismiss overlay after 8 seconds so user is never trapped
+    // Dismiss a slow loading overlay without changing the learner's selected view.
     const safetyTimer = setTimeout(() => {
       if (!this.modelLoaded) {
-        console.warn('⏱️ GLB loading taking long, dismissing overlay to allow 2D interaction.');
+        console.warn('⏱️ GLB loading taking long; keeping the selected view while loading.');
         hideOverlay();
-        window.switchViewMode?.('2d');
       }
     }, 8000);
 
@@ -187,13 +206,23 @@ export class Apartment3DMap {
           this.apartmentModel = gltf.scene;
           this.apartmentModel.position.set(0, 0, 0);
 
-          // Enable shadows and enhance materials
+          // Keep textures while lifting the original near-black furniture finishes.
+          const furnitureFinishes = {
+            'Adler Dark Wood': 0x886244,
+            'Ebony Wood': 0xa3a3a3,
+            'Leather_01': 0xad8d6e,
+            'BA_Leather_01': 0x948a7e,
+            'Cabinets_02': 0x667e94,
+            'BA_Color_Black_01': 0x4b5563
+          };
           this.apartmentModel.traverse((child) => {
             if (child.isMesh) {
               child.castShadow = true;
               child.receiveShadow = true;
-              if (child.material) {
-                child.material.roughness = Math.max(0.25, child.material.roughness || 0.6);
+              for (const material of Array.isArray(child.material) ? child.material : [child.material]) {
+                if (!material) continue;
+                material.roughness = Math.max(0.25, material.roughness || 0.6);
+                if (furnitureFinishes[material.name] !== undefined) material.color.setHex(furnitureFinishes[material.name]);
               }
             }
           });
@@ -223,7 +252,7 @@ export class Apartment3DMap {
         clearTimeout(safetyTimer);
         console.warn('⚠️ Error loading Apartment.glb:', err);
         hideOverlay();
-        window.switchViewMode?.('2d');
+        window.switchViewMode?.('fallback');
       }
     );
   }
@@ -242,7 +271,7 @@ export class Apartment3DMap {
     const pixels = new Uint8Array(width*height*4);
     try {
       hidden.forEach(child => { child.visible = false; });
-      this.scene.background = new THREE.Color(0x0f172a);
+      this.scene.background = new THREE.Color(0xeaf0f5);
       this.renderer.setRenderTarget(target);
       this.renderer.render(this.scene,camera);
       this.renderer.readRenderTargetPixels(target,0,0,width,height,pixels);
@@ -330,7 +359,7 @@ export class Apartment3DMap {
     const ctx = canvas.getContext('2d');
 
     // Background pill
-    ctx.fillStyle = 'rgba(15, 23, 42, 0.92)';
+    ctx.fillStyle = 'rgba(255, 255, 255, 0.96)';
     ctx.strokeStyle = `#${colorHex.toString(16).padStart(6, '0')}`;
     ctx.lineWidth = 6;
     ctx.beginPath();
@@ -343,13 +372,14 @@ export class Apartment3DMap {
     ctx.textAlign = 'left';
     ctx.fillText(icon, 36, 102);
 
-    ctx.fillStyle = '#ffffff';
+    ctx.fillStyle = '#1e293b';
     ctx.font = 'bold 36px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
     ctx.fillText(text, 110, 96);
 
     const texture = new THREE.CanvasTexture(canvas);
+    texture.colorSpace = THREE.SRGBColorSpace;
     texture.minFilter = THREE.LinearFilter;
-    const spriteMat = new THREE.SpriteMaterial({ map: texture, depthTest: true, depthWrite: false });
+    const spriteMat = new THREE.SpriteMaterial({ map: texture, depthTest: true, depthWrite: false, toneMapped: false });
     const sprite = new THREE.Sprite(spriteMat);
     sprite.scale.set(2.4, 0.75, 1);
     return sprite;
@@ -479,7 +509,7 @@ export class Apartment3DMap {
     canvas.height = 110;
     const ctx = canvas.getContext('2d');
 
-    ctx.fillStyle = 'rgba(15, 23, 42, 0.94)';
+    ctx.fillStyle = 'rgba(255, 255, 255, 0.96)';
     ctx.strokeStyle = '#38bdf8';
     ctx.lineWidth = 4;
     ctx.beginPath();
@@ -487,20 +517,22 @@ export class Apartment3DMap {
     ctx.fill();
     ctx.stroke();
 
-    ctx.fillStyle = '#ffffff';
+    ctx.fillStyle = '#1e293b';
     ctx.font = 'bold 24px -apple-system, sans-serif';
     ctx.textAlign = 'center';
     ctx.fillText('🤖 CLEANING ROBOT', 220, 42);
 
-    ctx.fillStyle = '#34d399';
+    ctx.fillStyle = '#166534';
     ctx.font = 'bold 22px -apple-system, sans-serif';
     ctx.fillText(actionText, 220, 80);
 
     const texture = new THREE.CanvasTexture(canvas);
+    texture.colorSpace = THREE.SRGBColorSpace;
     const spriteMat = new THREE.SpriteMaterial({
       map: texture,
       depthTest: true,
       depthWrite: false,
+      toneMapped: false,
       transparent: true
     });
     const sprite = new THREE.Sprite(spriteMat);
@@ -517,7 +549,7 @@ export class Apartment3DMap {
     const { canvas, ctx, texture } = this.robotActionSprite;
     ctx.clearRect(0, 0, canvas.width, canvas.height);
 
-    ctx.fillStyle = 'rgba(15, 23, 42, 0.94)';
+    ctx.fillStyle = 'rgba(255, 255, 255, 0.96)';
     ctx.strokeStyle = '#38bdf8';
     ctx.lineWidth = 4;
     ctx.beginPath();
@@ -525,12 +557,12 @@ export class Apartment3DMap {
     ctx.fill();
     ctx.stroke();
 
-    ctx.fillStyle = '#ffffff';
+    ctx.fillStyle = '#1e293b';
     ctx.font = 'bold 24px -apple-system, sans-serif';
     ctx.textAlign = 'center';
     ctx.fillText('🤖 CLEANING ROBOT', 220, 42);
 
-    ctx.fillStyle = '#34d399';
+    ctx.fillStyle = '#166534';
     ctx.font = 'bold 22px -apple-system, sans-serif';
     ctx.fillText(text, 220, 80);
 
@@ -644,13 +676,15 @@ export class Apartment3DMap {
     canvas.width = 2048;
     canvas.height = 96;
     const context = canvas.getContext('2d');
-    context.fillStyle = 'rgba(15,23,42,0.95)';
+    context.fillStyle = 'rgba(255,255,255,0.96)';
     context.fillRect(0, 0, canvas.width, canvas.height);
     context.font = '30px sans-serif';
-    context.fillStyle = '#fef08a';
+    context.fillStyle = '#854d0e';
     context.textAlign = 'center';
     context.fillText(text, 1024, 58, 2000);
-    const label = new THREE.Sprite(new THREE.SpriteMaterial({ map: new THREE.CanvasTexture(canvas), depthTest: false }));
+    const texture = new THREE.CanvasTexture(canvas);
+    texture.colorSpace = THREE.SRGBColorSpace;
+    const label = new THREE.Sprite(new THREE.SpriteMaterial({ map: texture, depthTest: false, toneMapped: false }));
     label.scale.set(7.5, 0.35, 1);
     return label;
   }

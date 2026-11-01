@@ -4,6 +4,7 @@
  */
 
 import { DEFAULT_RULE_TEMPLATES, ALL_BLOCKS } from './data/blocks.js';
+import { PILOT_STAGES, TASK_PURPOSES } from './pilot-config.js';
 
 class StateManager {
   constructor() {
@@ -12,8 +13,11 @@ class StateManager {
     this.participantId = 'Learner';
 
     // Step 1: Purpose & Performance Measures
-    this.agentPurpose = 'Autonomous Household Cleaning & Hazard-Avoidance Assistant';
-    this.selectedTasks = ['TASK_1', 'TASK_2', 'TASK_3', 'TASK_4', 'TASK_5', 'TASK_6'];
+    this.agentPurpose = 'Design a household robot, one stage at a time.';
+    this.currentStage = 1;
+    this.selectedTasks = [...PILOT_STAGES[0].taskIds];
+    this.stagePurposes = { 1: this.createStagePurposes(1) };
+    this.stageResults = { 1: { passingRunId: null, closingText: '' } };
     this.unlockedStep = 1;
     this.stepEnteredAt = Date.now();
     this.timeInStep = {};
@@ -75,14 +79,14 @@ class StateManager {
   }
 
   record(event, target = '', detail = {}, step = this.currentStep) {
-    this.notify('sessionEvent', { event, target, detail: typeof detail === 'object' && detail !== null ? {...detail,order:++this.eventOrder} : {value:detail,order:++this.eventOrder}, step });
+    this.notify('sessionEvent', { event, target, detail: typeof detail === 'object' && detail !== null ? {stageId:this.currentStage,taskIds:[...this.selectedTasks],...detail,order:++this.eventOrder} : {stageId:this.currentStage,taskIds:[...this.selectedTasks],value:detail,order:++this.eventOrder}, step });
   }
 
   canContinue(step = this.currentStep) {
-    if (step === 1) return Object.values(this.weights).reduce((a, b) => a + b, 0) === 100;
-    if (step === 2) return this.installedSensors.size >= 8 && this.installedSensors.size <= 11;
-    if (step === 3) return this.installedActuators.size >= 7 && this.installedActuators.size <= 10;
-    if (step === 4) return this.rules.some(rule => rule.slots.sense && rule.slots.action);
+    if (step === 1) return this.selectedTasks.every(id => Boolean(this.stagePurposes[this.currentStage]?.[id]?.priority));
+    if (step === 2) return this.installedSensors.size <= 11;
+    if (step === 3) return this.installedActuators.size <= 10;
+    if (step === 4) return this.getUnlockedRules().some(rule => rule.slots.sense && rule.slots.action);
     return step === 5;
   }
 
@@ -98,7 +102,6 @@ class StateManager {
     const durationMs = Date.now() - this.stepEnteredAt;
     this.timeInStep[oldStep] = (this.timeInStep[oldStep] || 0) + durationMs;
     this.record('STEP_TIME', String(oldStep), { durationMs });
-    if (oldStep === 1) this.record('WEIGHT_SET', 'weights', { ...this.weights, durationMs });
     if (step < oldStep) {
       this.revisitedSteps.push(step);
       this.debugIterations++;
@@ -107,11 +110,68 @@ class StateManager {
     this.unlockedStep = Math.max(this.unlockedStep, step);
     this.currentStep = step;
     this.stepEnteredAt = Date.now();
+    this.record('STEP_ENTERED', String(step), { from: oldStep, to: step });
     this.notify('stepChanged', { step, oldStep, durationMs });
     return true;
   }
 
-  recordHotspot(id, view = '2d') { this.record('HOTSPOT_VIEWED', id, { view }); }
+  createStagePurposes(stageId) {
+    return Object.fromEntries(PILOT_STAGES[stageId - 1].taskIds.map(id => [id, { purpose: TASK_PURPOSES[id].purpose, priority: null }]));
+  }
+
+  setTaskPurpose(taskId, purpose) {
+    const task = this.stagePurposes[this.currentStage]?.[taskId];
+    if (!task || !this.selectedTasks.includes(taskId)) return false;
+    task.purpose = String(purpose);
+    this.rulesRevision++;
+    this.record('PURPOSE_CHANGED', taskId, { taskId, purpose: task.purpose });
+    this.notify('purposeChanged', { taskId });
+    return true;
+  }
+
+  setTaskPriority(taskId, priority) {
+    const task = this.stagePurposes[this.currentStage]?.[taskId];
+    if (!task || !this.selectedTasks.includes(taskId) || !TASK_PURPOSES[taskId].priorities.some(([id]) => id === priority)) return false;
+    task.priority = priority;
+    this.rulesRevision++;
+    this.record('TASK_PRIORITY_CHANGED', taskId, { taskId, priority });
+    this.notify('purposeChanged', { taskId });
+    return true;
+  }
+
+  getUnlockedRules() { return this.rules.filter(rule => this.selectedTasks.includes(rule.taskId)); }
+
+  getConfiguration() {
+    return { stageId: this.currentStage, taskIds: [...this.selectedTasks], purposes: structuredClone(this.stagePurposes[this.currentStage]),
+      sensors: [...this.installedSensors], actuators: [...this.installedActuators], rules: structuredClone(this.getUnlockedRules()) };
+  }
+
+  retainRun(snapshot) {
+    this.runHistory.push(snapshot);
+    if (snapshot.passed) this.stageResults[snapshot.stageId].passingRunId = snapshot.runId;
+  }
+
+  canContinueStage() { return this.currentStage < PILOT_STAGES.length && this.stageResults[this.currentStage].passingRunId !== null; }
+
+  continueStage() {
+    if (!this.canContinueStage()) return false;
+    const from = this.currentStage, to = from + 1;
+    this.record('STAGE_ENDED', String(from), { passingRunId: this.stageResults[from].passingRunId });
+    this.record('STAGE_TRANSITION', String(to), { from, to });
+    this.currentStage = to;
+    this.selectedTasks = [...PILOT_STAGES[to - 1].taskIds];
+    this.stagePurposes[to] = this.createStagePurposes(to);
+    this.stageResults[to] = { passingRunId: null, closingText: '' };
+    this.currentStep = this.unlockedStep = 1;
+    this.stepEnteredAt = Date.now();
+    this.rulesRevision++;
+    this.reflectionPrompt = null;
+    this.record('STAGE_STARTED', String(to));
+    this.notify('stageChanged', { from, stageId: to });
+    return true;
+  }
+
+  recordHotspot(id, view = 'fallback') { this.record('HOTSPOT_VIEWED', id, { view }); }
 
   setRobotPov(active, view = '2d') {
     if (active === this.isRobotPovActive) return;
@@ -131,6 +191,7 @@ class StateManager {
 
   setClosingText(text) {
     this.closingText = text;
+    this.stageResults[this.currentStage].closingText = text;
     this.record('CLOSING_TEXT', 'closing', { text });
   }
 
@@ -152,6 +213,7 @@ class StateManager {
       }
       this.installedSensors.add(sensorId);
     }
+    this.rulesRevision++;
     this.record(isInstalled ? 'SENSOR_REMOVED' : 'SENSOR_MOUNTED', sensorId, { order: this.installedSensors.size, installed: [...this.installedSensors] });
     this.notify('sensorsChanged', { installed: Array.from(this.installedSensors) });
     return { success: true };
@@ -165,6 +227,7 @@ class StateManager {
       if (this.installedActuators.size >= 10) return { success: false };
       this.installedActuators.add(actuatorId);
     }
+    this.rulesRevision++;
     this.record(isInstalled ? 'ACTUATOR_REMOVED' : 'ACTUATOR_MOUNTED', actuatorId, { order: this.installedActuators.size, installed: [...this.installedActuators] });
     this.notify('actuatorsChanged', { installed: Array.from(this.installedActuators) });
     return { success: true };
@@ -172,11 +235,11 @@ class StateManager {
 
   createRule(task) {
     return { taskId: task.taskId, taskName: task.taskName, id: `RULE_${this.nextRuleId++}`,
-      slots: { sense: null, condition: null, action: null, control: null, secondaryAction: null } };
+      slots: { sense: null, condition: null, action: null, control: null, secondaryAction: null, priority: null } };
   }
 
   getAttemptedTaskIds() {
-    return [...new Set(this.rules.filter(rule => rule.slots.sense && rule.slots.action).map(rule => rule.taskId))];
+    return [...new Set(this.getUnlockedRules().filter(rule => rule.slots.sense && rule.slots.action).map(rule => rule.taskId))];
   }
 
   addRule(taskId) {
@@ -203,15 +266,18 @@ class StateManager {
 
   setRuleSlot(ruleRef, slotName, blockId) {
     const rule = typeof ruleRef === 'number' ? this.rules[ruleRef] : this.rules.find(rule => rule.id === ruleRef);
-    const kinds = { sense: 'Sense', condition: 'Condition', action: 'Action', secondaryAction: 'Action', control: 'Control' };
+    const kinds = { sense: 'Sense', condition: 'Condition', action: 'Action', secondaryAction: 'Action', control: 'Control', priority: 'Control' };
     if (!rule || !kinds[slotName]) return false;
     if (blockId && !ALL_BLOCKS.some(block => block.id === blockId && block.kind === kinds[slotName])) return false;
+    if (blockId && slotName === 'control' && ['CTRL_05','CTRL_06'].includes(blockId)) return false;
+    if (blockId && slotName === 'priority' && !['CTRL_05','CTRL_06'].includes(blockId)) return false;
     const previous = rule.slots[slotName];
     if (previous === blockId) return true;
     const detail = { zone: DEFAULT_RULE_TEMPLATES.findIndex(task => task.taskId === rule.taskId), taskId: rule.taskId, ruleId: rule.id, slot: slotName };
     if (previous) this.record('BLOCK_REMOVED', previous, detail);
     rule.slots[slotName] = blockId || null;
     if (blockId) this.record('BLOCK_PLACED', blockId, detail);
+    if (slotName === 'priority') this.record('RULE_PRIORITY_CHANGED', rule.id, { taskId: rule.taskId, ruleId: rule.id, priority: blockId || null });
     this.rulesRevision++;
     this.notify('rulesChanged', { rules: this.rules });
     return true;
@@ -225,6 +291,7 @@ class StateManager {
       timestamp: new Date().toLocaleTimeString(),
       tick: this.simTick,
       participantId: this.participantId,
+      stageId: this.currentStage, taskIds: [...this.selectedTasks],
       stamp, // '✓' (Expected), '✗' (Mismatch), '?' (Uncertain)
       comment
     };

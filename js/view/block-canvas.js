@@ -2,7 +2,7 @@ import { appState } from '../state.js';
 import { SENSE_BLOCKS, CONDITION_BLOCKS, ACTION_BLOCKS, CONTROL_BLOCKS, DEFAULT_RULE_TEMPLATES, getBlockById } from '../data/blocks.js';
 import { sound } from './audio.js';
 
-const shelves = { Sense: SENSE_BLOCKS, Condition: CONDITION_BLOCKS, Action: ACTION_BLOCKS, Control: CONTROL_BLOCKS };
+const shelves = { Sense: SENSE_BLOCKS, Condition: CONDITION_BLOCKS, Action: ACTION_BLOCKS, Control: CONTROL_BLOCKS.filter(block => !['CTRL_05','CTRL_06'].includes(block.id)) };
 export function acceptsBlock(slot, block) {
   return Boolean(block && (slot === 'secondaryAction' ? 'action' : slot.toLowerCase()) === block.kind.toLowerCase());
 }
@@ -14,7 +14,7 @@ export class BlockCanvasView {
     this.paletteScroll = {};
     appState.on('rulesChanged', () => {
       this.render();
-      if (appState.currentStep === 4 && appState.rules.some(r => r.slots.sense && r.slots.action)) window.startRulePreview?.();
+      if (appState.currentStep === 4 && appState.getUnlockedRules().some(r => r.slots.sense && r.slots.action)) window.startRulePreview?.();
     });
     appState.on('tick', ({ robot }) => this.updateTracePulse(robot?.traceState));
   }
@@ -28,10 +28,10 @@ export class BlockCanvasView {
     if (list?.dataset?.shelf) this.paletteScroll[list.dataset.shelf] = list.scrollTop;
     this.container.innerHTML = `<div class="block-canvas-container">
       <header class="canvas-header"><div><h3>Program your robot</h3><p>For each task, build rules: what it senses, when, what it does.</p></div></header>
-      <div class="canvas-workspace"><div class="task-zones-column">${DEFAULT_RULE_TEMPLATES.map((task, i) => this.renderTaskZone(task, i, appState.rules.filter(rule => rule.taskId === task.taskId))).join('')}
+      <div class="canvas-workspace"><div class="task-zones-column">${DEFAULT_RULE_TEMPLATES.filter(task => appState.selectedTasks.includes(task.taskId)).map((task, i) => this.renderTaskZone(task, i, appState.rules.filter(rule => rule.taskId === task.taskId))).join('')}
       <canvas id="ruleApartmentPreview" width="480" height="360" aria-label="Live rule preview"></canvas><div class="rule-trace" aria-live="polite"><div data-trace="sense">SENSING —</div><div data-trace="decide">DECIDING —</div><div data-trace="act">ACTING —</div></div>
-      <p class="rule-attempt-count" hidden></p><button class="btn btn-primary rule-continue" ${appState.rules.some(r => r.slots.sense && r.slots.action) ? '' : 'disabled'}>Continue</button></div>
-      <aside class="block-palette-column"><div class="palette-tabs" role="tablist" aria-label="Block library">${Object.keys(shelves).map(kind => `<button role="tab" id="shelf-${kind}" data-shelf="${kind}" aria-selected="${kind===this.activeShelf}" aria-controls="activeBlockShelf">${kind.toUpperCase()}</button>`).join('')}</div><div class="palette-list" id="activeBlockShelf" role="tabpanel" aria-labelledby="shelf-${this.activeShelf}" data-shelf="${this.activeShelf}">${this.renderPaletteBlocks(this.activeShelf)}</div></aside></div></div>`;
+      <p class="rule-attempt-count" hidden></p><button class="btn btn-primary rule-continue" ${appState.getUnlockedRules().some(r => r.slots.sense && r.slots.action) ? '' : 'disabled'}>Continue</button></div>
+      <aside class="block-palette-column"><div class="palette-tabs" role="tablist" aria-label="Block library">${Object.keys(shelves).map(kind => `<button role="tab" id="shelf-${kind}" data-shelf="${kind}" aria-selected="${kind===this.activeShelf}" aria-controls="activeBlockShelf">${kind === 'Control' ? 'FLOW CONTROL' : kind.toUpperCase()}</button>`).join('')}</div><div class="palette-list" id="activeBlockShelf" role="tabpanel" aria-labelledby="shelf-${this.activeShelf}" data-shelf="${this.activeShelf}">${this.renderPaletteBlocks(this.activeShelf)}</div></aside></div></div>`;
     this.attachEvents();
     this.container.querySelector('.task-zones-column').scrollTop=zoneScroll;
     this.container.querySelector('.palette-list').scrollTop=this.paletteScroll[this.activeShelf] || 0;
@@ -41,7 +41,7 @@ export class BlockCanvasView {
   }
   renderRuleRow(rule, row, count) {
     const label = row === 0 ? rule.taskName : `${rule.taskName}, Rule ${row + 1}`;
-    return `<div class="rule-row" data-rule-id="${rule.id}"><div class="rule-row-header"><span>Rule ${row + 1}</span><button class="btn btn-outline remove-rule" data-rule-id="${rule.id}" aria-label="Remove Rule ${row + 1} for ${rule.taskName}" ${count === 1 ? 'disabled' : ''}>Remove rule</button></div><div class="four-slot-chain">${['sense', 'condition', 'action', 'control', ...(rule.slots.control === 'CTRL_04' ? ['secondaryAction'] : [])].map(slot => {
+    return `<div class="rule-row" data-rule-id="${rule.id}"><div class="rule-row-header"><span>Rule ${row + 1}</span><button class="btn btn-outline remove-rule" data-rule-id="${rule.id}" aria-label="Remove Rule ${row + 1} for ${rule.taskName}" ${count === 1 ? 'disabled' : ''}>Remove rule</button><label>Execution priority <select data-rule-priority="${rule.id}" aria-label="Execution priority for ${label}"><option value="CTRL_06" ${rule.slots.priority !== 'CTRL_05' ? 'selected' : ''}>Normal</option><option value="CTRL_05" ${rule.slots.priority === 'CTRL_05' ? 'selected' : ''}>High</option></select></label></div><div class="four-slot-chain">${['sense', 'condition', 'action', 'control', ...(rule.slots.control === 'CTRL_04' ? ['secondaryAction'] : [])].map(slot => {
       const block = getBlockById(rule.slots[slot]);
       return `<div class="slot-container slot-${slot} ${block ? 'filled' : 'empty'}" tabindex="0" role="button" aria-label="${label}: ${slot}" data-rule-id="${rule.id}" data-slot="${slot}"><span class="slot-label">${slot === 'secondaryAction' ? 'THEN ACTION' : slot.toUpperCase()}${slot === 'control' ? ' (optional)' : ''}</span>${block ? `<div class="block-card kind-${slot}"><span class="block-name">${block.name}</span><button class="clear-slot-btn" aria-label="Remove ${block.name} from ${label}: ${slot}">×</button></div>` : '<span class="empty-placeholder">＋</span>'}</div>`;
     }).join('<span class="slot-arrow">→</span>')}</div></div>`;
@@ -51,13 +51,14 @@ export class BlockCanvasView {
   }
   place(taskIndex, slot, block) {
     if (!acceptsBlock(slot, block)) return false;
-    appState.setRuleSlot(taskIndex, slot, block.id);
+    if (appState.setRuleSlot(taskIndex, slot, block.id) === false) return false;
     sound.playSnap();
     return true;
   }
   attachEvents() {
     this.container.querySelectorAll('[data-shelf][role="tab"]').forEach(tab=>{tab.onclick=()=>{this.activeShelf=tab.dataset.shelf;this.render();};});
     this.container.querySelectorAll('.add-rule').forEach(button => { button.onclick = () => appState.addRule(button.dataset.taskId); });
+    this.container.querySelectorAll('[data-rule-priority]').forEach(select => { select.onchange = () => appState.setRuleSlot(select.dataset.rulePriority, 'priority', select.value); });
     this.container.querySelectorAll('.remove-rule').forEach(button => { button.onclick = () => appState.removeRule(button.dataset.ruleId); });
     this.container.querySelectorAll('.palette-block-card').forEach(card => {
       card.onclick = () => {
@@ -80,7 +81,7 @@ export class BlockCanvasView {
       if (!count) return;
       const line = this.container.querySelector('.rule-attempt-count');
       line.hidden = false;
-      line.textContent = `Your robot will attempt ${count} of 6 tasks.`;
+      line.textContent = `Rules configured for ${count} current ${count === 1 ? 'task' : 'tasks'}.`;
       if (window.navigateStep) window.navigateStep(5); else appState.setStep(5);
     };
   }

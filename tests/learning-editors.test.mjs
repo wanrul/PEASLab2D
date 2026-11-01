@@ -57,12 +57,12 @@ test('sensor editor exposes all fifteen cards and eleven empty physical points',
     assert.equal((container.innerHTML.match(/data-module-id=/g) || []).length, 15);
     assert.equal((container.innerHTML.match(/data-mount-index=/g) || []).length, 11);
     assert.match(container.innerHTML, /0 \/ 11 mounted/);
-    assert.match(container.innerHTML, /Mount 8–11 sensors/);
-    assert.match(container.innerHTML, /mounting-continue" disabled/);
+    assert.match(container.innerHTML, /Up to 11 sensors. No minimum selection/);
+    assert.doesNotMatch(container.innerHTML, /mounting-continue" disabled/);
   } finally { appState.installedSensors = old; }
 });
 
-test('body editor exposes fourteen cards, ten points, and the numeric gate', () => {
+test('body editor exposes fourteen cards, ten points, and capacity only', () => {
   const old = appState.installedActuators;
   appState.installedActuators = new Set(ACTUATORS_CATALOG.slice(0, 7).map(a => a.id));
   const container = { innerHTML: '', isConnected: false, querySelectorAll: () => [], querySelector: () => ({}) };
@@ -71,7 +71,7 @@ test('body editor exposes fourteen cards, ten points, and the numeric gate', () 
     assert.equal((container.innerHTML.match(/data-module-id=/g) || []).length, 14);
     assert.equal((container.innerHTML.match(/data-mount-index=/g) || []).length, 10);
     assert.match(container.innerHTML, /7 \/ 10 mounted/);
-    assert.match(container.innerHTML, /Mount 7–10 actuators/);
+    assert.match(container.innerHTML, /Up to 10 actuators. No minimum selection/);
     assert.ok(!container.innerHTML.includes('mounting-continue" disabled'));
   } finally { appState.installedActuators = old; }
 });

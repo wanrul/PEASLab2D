@@ -1,3 +1,5 @@
+Historical reference: the current staged single-learner workflow is documented in README.md and docs/STAGED_PILOT.md. Those documents supersede legacy six-task, weight, selection-minimum, grading and collaboration requirements below.
+
 # CollabPEAS: Workflow & User Guide
 
 > **A Comprehensive Guide to Designing, Simulating, and Debugging Household Autonomous Agents via the PEAS Framework**  
