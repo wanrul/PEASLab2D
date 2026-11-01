@@ -1,0 +1,411 @@
+/**
+ * CollabPEAS - Block Canvas & POV HUD Stylesheet
+ * 4-slot decision rule layout, color-coded block cards, compatibility warnings,
+ * execution pulse animations, and robot sensor POV overlay.
+ */
+
+/* Block Canvas Container */
+.block-canvas-container {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  height: 100%;
+}
+
+.canvas-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  border-bottom: 1px solid var(--border-color);
+  padding-bottom: 14px;
+}
+
+.canvas-header h3 {
+  font-size: 20px;
+  color: #f8fafc;
+}
+
+.canvas-subtitle {
+  font-size: 12px;
+  color: var(--text-muted);
+  max-width: 650px;
+  margin-top: 4px;
+}
+
+.canvas-workspace {
+  display: flex;
+  gap: 20px;
+  flex: 1;
+  min-height: 600px;
+  overflow: hidden;
+}
+
+/* Left: 6 Task Zones */
+.task-zones-column {
+  flex: 7;
+  overflow-y: auto;
+  max-height: 620px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding-right: 6px;
+}
+
+.task-zone-card {
+  background-color: #0b1120;
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  padding: 12px 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  transition: all 0.2s ease;
+}
+
+.rule-row.pulse-active {
+  border-color: #10b981;
+  box-shadow: 0 0 16px rgba(16, 185, 129, 0.4);
+  background-color: rgba(16, 185, 129, 0.05);
+}
+
+.task-zone-card.focused {
+  border-color: #38bdf8;
+  box-shadow: 0 0 18px rgba(56, 189, 248, 0.4);
+  background-color: rgba(56, 189, 248, 0.06);
+}
+
+.zone-title-bar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.task-number {
+  font-size: 11px;
+  font-weight: 700;
+  color: #38bdf8;
+  background: rgba(56, 189, 248, 0.15);
+  padding: 2px 8px;
+  border-radius: 4px;
+}
+
+.task-name {
+  font-size: 13px;
+  font-weight: 600;
+  flex: 1;
+}
+
+.dim-tag {
+  font-size: 10px;
+  color: var(--text-muted);
+  background: #1e293b;
+  padding: 2px 6px;
+  border-radius: 4px;
+}
+
+/* 4-Slot Chain */
+.four-slot-chain {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.slot-arrow {
+  color: #475569;
+  font-size: 14px;
+}
+
+.slot-container {
+  flex: 1;
+  background-color: #111827;
+  border: 1px dashed var(--border-color);
+  border-radius: 6px;
+  padding: 6px 8px;
+  min-height: 58px;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  cursor: pointer;
+  position: relative;
+  transition: all 0.15s ease;
+}
+
+.slot-container:hover {
+  border-color: #38bdf8;
+  background-color: #1e293b;
+}
+
+.slot-container.filled {
+  border-style: solid;
+  border-color: transparent;
+  padding: 4px;
+}
+
+.slot-container.incompatible {
+  border-color: #ef4444;
+  background-color: rgba(239, 68, 68, 0.1);
+}
+
+.slot-label {
+  font-size: 9px;
+  color: #64748b;
+  font-weight: 700;
+  text-transform: uppercase;
+  margin-bottom: 2px;
+}
+
+.empty-placeholder {
+  font-size: 10px;
+  color: #64748b;
+  text-align: center;
+}
+
+.empty-placeholder.optional-hint {
+  color: #475569;
+}
+
+.slot-error {
+  font-size: 9px;
+  color: #ef4444;
+  font-weight: 600;
+  margin-top: 2px;
+}
+
+.slot-warning {
+  font-size: 9px;
+  color: #f59e0b;
+  margin-top: 2px;
+}
+
+/* Block Cards Inside Slots */
+.block-card {
+  border-radius: 4px;
+  padding: 6px 8px;
+  display: flex;
+  flex-direction: column;
+  position: relative;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.3);
+}
+
+.block-card.kind-sense { background: #0284c7; color: #fff; }
+.block-card.kind-condition { background: #d97706; color: #fff; }
+.block-card.kind-action { background: #059669; color: #fff; }
+.block-card.kind-control { background: #475569; color: #fff; }
+
+.block-card .block-id {
+  font-size: 9px;
+  font-weight: 700;
+  opacity: 0.85;
+}
+
+.block-card .block-name {
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 1.2;
+}
+
+.clear-slot-btn {
+  position: absolute;
+  top: 4px;
+  right: 4px;
+  background: rgba(0, 0, 0, 0.35);
+  border: none;
+  color: #fff;
+  border-radius: 50%;
+  width: 16px;
+  height: 16px;
+  font-size: 9px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.clear-slot-btn:hover {
+  background: rgba(0, 0, 0, 0.7);
+}
+
+/* Right: Block Library Palette */
+.block-palette-column {
+  flex: 5;
+  max-height: 620px;
+  overflow-y: auto;
+  background-color: #0b1120;
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  padding: 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.palette-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.palette-header h4 {
+  font-size: 14px;
+  color: #f8fafc;
+}
+
+.active-badge {
+  font-size: 10px;
+  color: #38bdf8;
+}
+
+.palette-tabs {
+  display: flex;
+  gap: 4px;
+}
+
+.tab-btn {
+  flex: 1;
+  padding: 6px 2px;
+  font-size: 10px;
+  font-weight: 700;
+  background: #1e293b;
+  border: 1px solid var(--border-color);
+  color: var(--text-muted);
+  border-radius: 4px;
+  cursor: pointer;
+}
+
+.tab-btn.active {
+  background: #0284c7;
+  color: #fff;
+  border-color: #38bdf8;
+}
+
+.palette-list {
+  flex: 1;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding-right: 4px;
+  max-height: 400px;
+}
+
+.palette-block-card {
+  background-color: #1e293b;
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  padding: 8px 10px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.palette-block-card:hover {
+  transform: translateX(3px);
+  border-color: #38bdf8;
+}
+
+.palette-block-card.selected {
+  border-color: #38bdf8;
+  background-color: rgba(56, 189, 248, 0.15);
+  box-shadow: 0 0 10px rgba(56, 189, 248, 0.3);
+}
+
+.palette-block-card .card-top {
+  display: flex;
+  justify-content: space-between;
+  margin-bottom: 2px;
+}
+
+.palette-block-card .block-badge {
+  font-size: 9px;
+  font-weight: 700;
+  color: #38bdf8;
+}
+
+.palette-block-card .block-kind-tag {
+  font-size: 8px;
+  text-transform: uppercase;
+  background: rgba(255, 255, 255, 0.1);
+  padding: 1px 4px;
+  border-radius: 3px;
+}
+
+.palette-block-card.kind-sense .block-badge { color: #38bdf8; }
+.palette-block-card.kind-condition .block-badge { color: #fbbf24; }
+.palette-block-card.kind-action .block-badge { color: #34d399; }
+.palette-block-card.kind-control .block-badge { color: #94a3b8; }
+
+.palette-block-card .card-name {
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.palette-block-card .card-desc {
+  font-size: 10px;
+  color: var(--text-muted);
+}
+
+.palette-block-card .card-meta {
+  font-size: 9px;
+  color: #fbbf24;
+  margin-top: 3px;
+}
+
+.selected-block-inspector {
+  background: #020617;
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  padding: 8px 10px;
+  min-height: 48px;
+}
+
+.inspector-prompt {
+  font-size: 10px;
+  color: var(--text-muted);
+  text-align: center;
+  line-height: 28px;
+}
+
+.active-selection-box {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.sel-title {
+  font-size: 11px;
+  color: #38bdf8;
+}
+
+.sel-guide {
+  font-size: 10px;
+  color: var(--text-muted);
+}
+
+/* Robot POV Overlay */
+#robotPovModal {
+  position: fixed;
+  top: 112px;
+  left: 16px;
+  right: 16px;
+  z-index: 1100;
+  display: none;
+  pointer-events: none;
+}
+
+.robot-pov-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px 16px;
+  background: rgba(15, 23, 42, 0.92);
+  border: 1px solid #38bdf8;
+  border-radius: 10px;
+  color: #f1f5f9;
+}
+
+.robot-pov-toolbar span { display: block; font-size: 11px; color: #cbd5e1; }
+.robot-pov-toolbar .close-pov-btn { pointer-events: auto; flex-shrink: 0; }
+
+.rule-row { border: 1px solid transparent; border-radius: 6px; padding: 8px; }
+.rule-row-header { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 8px; font-size: 12px; color: var(--text-muted); }
+.rule-row-header .btn, .add-rule { padding: 5px 9px; font-size: 12px; }

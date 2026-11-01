@@ -1,0 +1,249 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>PEASLab2D - Individual AI Agent Design (PEAS Framework)</title>
+  <link rel="stylesheet" href="styles/main.css" />
+  <link rel="stylesheet" href="styles/blocks.css" />
+  <link rel="stylesheet" href="styles/v6.css" />
+
+  <!-- Importmap for Local Three.js and Addons -->
+  <script type="importmap">
+  {
+    "imports": {
+      "three": "./lib/three/three.module.js"
+    }
+  }
+  </script>
+</head>
+<body>
+  <!-- 1. Full-Screen Interactive Apartment Viewport Layer -->
+  <div class="fullscreen-house-container" id="fullscreenHouseContainer">
+    <!-- 2D Canvas View (with 360° rotation) -->
+    <canvas id="houseCanvas"></canvas>
+
+    <!-- 3D WebGL Three.js Canvas View (Apartment.glb) -->
+    <canvas id="threeCanvas"></canvas>
+
+    <!-- 3D Model Loading Overlay -->
+    <div id="glbLoadingOverlay" class="glb-loading-overlay">
+      <div class="glb-loading-box">
+        <span class="loading-icon">🏢</span>
+        <div class="loading-text">Loading 3D Apartment Model (GLB)...</div>
+        <div class="loading-progress-bar">
+          <div class="loading-progress-fill" id="glbProgressFill" style="width: 15%;"></div>
+        </div>
+        <div class="loading-sub" id="glbProgressText">Initializing 360° Interactive Environment...</div>
+        <button class="btn btn-sm btn-outline cancel-glb-btn" id="cancelGlbLoadBtn" style="margin-top: 14px; font-weight: 600;">
+          ✕ Skip to 2D Map
+        </button>
+      </div>
+    </div>
+
+    <!-- Interactive 360° Compass & Rotation Dial (Top Right Floating HUD) -->
+    <div class="compass-widget" id="compassWidget" title="Click or drag to rotate 360°">
+      <div class="compass-dial" id="compassDial">
+        <div class="compass-needle" id="compassNeedle">
+          <span class="needle-north">▲ N</span>
+          <span class="needle-south">▼ S</span>
+        </div>
+        <div class="compass-center-dot"></div>
+      </div>
+      <div class="compass-readout" id="compassReadout">🧭 0° N</div>
+      <div class="compass-quick-btns">
+        <button class="compass-btn" data-angle="0" title="Snap to North (0°)">N</button>
+        <button class="compass-btn" data-angle="90" title="Snap to East (90°)">E</button>
+        <button class="compass-btn" data-angle="180" title="Snap to South (180°)">S</button>
+        <button class="compass-btn" data-angle="270" title="Snap to West (270°)">W</button>
+        <button class="compass-btn" data-angle="45" title="3D Isometric (45°)">ISO</button>
+        <button class="compass-btn" id="autoSpinBtn" title="Toggle Auto 360° Orbit">🔄</button>
+      </div>
+    </div>
+
+    <!-- Floating On-Screen Navigation & 360° Interaction Hints (Bottom Left) -->
+    <div class="map-controls-hint" id="mapControlsHint">
+      <span class="hint-key">🖱️ Orbit</span> Left-Drag 360°
+      <span class="hint-sep">•</span>
+      <span class="hint-key">📜 Zoom</span> Wheel
+      <span class="hint-sep">•</span>
+      <span class="hint-key">📐 Pan</span> Right-Drag
+      <span class="hint-sep">•</span>
+      <span class="hint-key">🎮 Move</span> WASD / Arrows
+      <span class="hint-sep">•</span>
+      <span class="hint-key">🎯 Stations</span> Click 3D Ring or [SPACE]
+    </div>
+
+    <!-- Map View Actions (Bottom Right) -->
+    <div class="map-view-actions">
+      <button class="btn-glass btn-highlight" id="focusRobotBtn" title="Instantly center camera on cleaning robot">
+        🤖 Focus Robot
+      </button>
+      <button class="btn-glass" id="followRobotBtn" title="Lock camera to follow cleaning robot">
+        🎥 Follow Robot
+      </button>
+      <button class="btn-glass" id="recenterMapBtn" title="Reset Camera to Center Apartment">
+        ⛶ Center Map
+      </button>
+      <button class="btn-glass btn-primary" id="openWorkstationFabBtn" title="Open PEAS Workstation">
+        📋 Workstation [SPACE]
+      </button>
+    </div>
+
+    <!-- Floating Live Simulation HUD (Bottom Center, for observing & testing) -->
+    <div id="simFloatingHud" class="sim-floating-hud" hidden>
+      <div class="sim-hud-status">
+        <span class="hud-status-dot running" id="hudStatusDot"></span>
+        <span class="hud-status-text" id="hudStatusText">PAUSED</span>
+        <span class="hud-tick-pill" id="hudTickText">Tick 0</span>
+        <div class="hud-task-badge" id="hudTaskBadge" title="Fixed mission">
+          <span id="hudTaskIcon">🧹</span>
+          <span id="hudTaskName">All six tasks</span>
+        </div>
+      </div>
+
+      <div class="sim-hud-controls">
+        <button class="btn-hud-icon" id="hudPlayPauseBtn" title="Play/Pause Simulation">Run</button>
+        <div class="hud-speed-group">
+          <button class="hud-speed-btn active" data-speed="1">1x</button>
+          <button class="hud-speed-btn" data-speed="2">2x</button>
+          <button class="hud-speed-btn" data-speed="5">5x</button>
+        </div>
+        <button class="btn-hud-icon" id="hudResetBtn" title="Reset Simulation">↺</button>
+      </div>
+
+      <div class="sim-hud-metrics">
+        <div class="hud-metric-item" data-score-definition="composite">
+          <span class="hud-metric-label">PEAS</span>
+          <span class="hud-metric-val" id="hudPeasScore">80.0</span>
+        </div>
+        <div class="hud-metric-item" data-score-definition="coverage">
+          <span class="hud-metric-label">Coverage</span>
+          <span class="hud-metric-val" id="hudCoverageScore">0%</span>
+        </div>
+        <div class="hud-metric-item" data-score-definition="safety">
+          <span class="hud-metric-label">Safety</span>
+          <span class="hud-metric-val" id="hudSafetyScore">100%</span>
+        </div>
+      </div>
+
+      <div class="hud-metric-item" data-score-definition="time"><span>Time</span><strong id="hud-time">—</strong></div>
+      <div class="hud-metric-item" data-score-definition="hazard"><span>Hazard</span><strong id="hud-hazard">—</strong></div>
+
+      <!-- Quick Observation Controls -->
+      <div class="sim-hud-stamps">
+        <span class="hud-stamp-label">Stamp Observation:</span>
+        <button class="hud-stamp-btn pass" id="hudStampPass" title="Mark Specification Match (✓)">✓</button>
+        <button class="hud-stamp-btn fail" id="hudStampFail" title="Mark Specification Violation (✗)">✗</button>
+        <button class="hud-stamp-btn query" id="hudStampQuery" title="Mark Uncertain / Needs Review (?)">?</button>
+      </div>
+
+      <button class="btn btn-sm btn-primary-glass" id="hudOpenLabBtn">
+        Open Step 5 Lab ↗
+      </button>
+    </div>
+
+    <!-- Robot POV Modal Overlay -->
+    <div id="robotPovModal"></div>
+  </div>
+
+  <!-- 2. Floating Top Navigation Header -->
+  <header class="app-header floating-header">
+    <div class="brand-section">
+      <span class="brand-logo">🤖</span>
+      <div>
+        <div class="brand-title">PEASLab2D</div>
+        <div class="brand-sub">Individual AI Agent Design • PEAS Framework</div>
+      </div>
+    </div>
+
+    <!-- Step Navigation Tracker Pills (Click to open that step in modal) -->
+    <nav class="steps-nav-tracker" id="topStepsNav">
+      <button class="step-nav-item active" data-step="1">
+        <span class="step-icon">🎯</span> 1. Purpose (P)
+      </button>
+      <button class="step-nav-item" data-step="2">
+        <span class="step-icon">📡</span> 2. Sensors (E+S)
+      </button>
+      <button class="step-nav-item" data-step="3">
+        <span class="step-icon">🦾</span> 3. Actuators (A)
+      </button>
+      <button class="step-nav-item" data-step="4">
+        <span class="step-icon">🧩</span> 4. Decision Logic
+      </button>
+      <button class="step-nav-item" data-step="5">
+        <span class="step-icon">🔬</span> 5. Test & Debug
+      </button>
+    </nav>
+
+    <!-- Header Action Controls -->
+    <div class="header-actions">
+      <!-- Active Mission / Task Selector Dropdown -->
+      <div class="fixed-mission-badge">All six tasks</div>
+
+      <!-- 360° View Mode Dropdown / Button Group -->
+      <div class="view-mode-group">
+        <button class="btn-mode" id="viewMode3DBtn" title="Interactive 3D 360° Orbit (Apartment.glb)">
+          🌐 3D 360°
+        </button>
+        <button class="btn-mode" id="viewModeFpsBtn" title="First-Person 360° Walkthrough">
+          🚶 FPS 360°
+        </button>
+        <button class="btn-mode active" id="viewMode2DBtn" title="2D Blueprint (360° Rotatable)">
+          📐 2D Map
+        </button>
+      </div>
+
+      <!-- Robot POV Quick Button -->
+      <button class="btn btn-sm btn-outline" id="quickPovBtn" title="Enter or exit the robot's first-person camera">
+        👁️ POV
+      </button>
+
+      <!-- Audio Mute Toggle -->
+      <button class="btn btn-sm btn-ghost" id="muteToggleBtn" title="Toggle sound effects">
+        🔊 On
+      </button>
+
+      <!-- Open Workstation Button -->
+      <button class="btn btn-sm btn-primary open-workstation-btn" id="openWorkstationBtn">
+        📋 Workstation
+      </button>
+    </div>
+  </header>
+
+  <!-- 3. Step Selection & Workstation Popup Modal Dialog -->
+  <div id="stepModalOverlay" class="step-modal-overlay" style="display: none;">
+    <div class="step-modal-dialog">
+      <!-- Modal Header with Quick Step Tabs and Close Button -->
+      <div class="step-modal-header">
+        <div class="modal-header-meta">
+          <span class="modal-badge-step" id="modalStepBadge">STEP 1 OF 5</span>
+          <h2 id="modalStepHeading">Purpose & Performance Measures (P)</h2>
+        </div>
+
+        <!-- Step Tabs within the Modal -->
+        <div class="modal-step-tabs" id="modalStepTabs">
+          <button class="modal-tab-btn active" data-step="1">1. Purpose</button>
+          <button class="modal-tab-btn" data-step="2">2. Sensors</button>
+          <button class="modal-tab-btn" data-step="3">3. Actuators</button>
+          <button class="modal-tab-btn" data-step="4">4. Logic</button>
+          <button class="modal-tab-btn" data-step="5">5. Test & Debug</button>
+        </div>
+
+        <button class="modal-close-btn" id="stepModalCloseBtn" title="Close to Fullscreen Map (Esc)">
+          ✕ Close [Esc]
+        </button>
+      </div>
+
+      <!-- Modal Body Content -->
+      <div class="step-modal-body">
+        <div id="stepsPanelMount"></div>
+        <div id="blockCanvasMount" style="display: none;"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Main JavaScript Module Entry -->
+  <script type="module" src="js/app.js"></script>
+</body>
+</html>

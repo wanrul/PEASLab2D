@@ -1,0 +1,149 @@
+CollabPEAS 2D — Build Brief for the Coding Agent (v6, single learner)
+Purpose of this file. This is the only design document the coding agent needs to rebuild the front end of collabpeas-2d. It replaces docs/WORKFLOW_AND_USER_GUIDE.md as the source of truth for what the learner sees and does. The catalogs in js/data/ (tasks, sensors, actuators, blocks) stay as they are and are referenced, not repeated, here. The simulation engine (js/sim/) stays as it is except where Section 6 says otherwise.
+Research context (one paragraph). CollabPEAS teaches non-technical adults to specify an AI agent with the PEAS framework (Russell & Norvig, 2010, §2.3.1). The learner designs a household cleaning robot in five steps, runs it, watches it fail, and revises. The learning happens in the gap between what the learner specified and what the robot actually does. The front end's only job is to make that gap visible. It must not close the gap for the learner.
+1. The one rule that governs every screen
+Feedback comes from the robot, not from the interface.
+In Russell & Norvig's definition, an agent is judged by its performance measure in its environment (2010, p. 37), not by whether its parts were "correct". The system follows the same logic: Steps 1–4 are where the learner commits to a specification; Step 5 is where the environment judges it. Debugging that specification is the learning activity (Papert, 1980; Kapur, 2008).
+Concretely, this means:
+Nothing starts pre-selected. Empty sensor slots, empty actuator slots, empty rule canvas. The learner builds everything.
+No card is labelled. No "recommended", no star badges, no "distractor", no "check if relevant", no "redundant". Every card looks the same.
+No limitation text on cards. Remove every "Misses:", "Cannot:", "Limit:" line. A card shows: icon, name, one plain sentence of what it does. What a sensor cannot see is discovered in Robot POV; what an actuator cannot do is discovered in the test run.
+No validation pop-ups. No alert(), no "Incompatible!", no "Capacity valid" badge, no "wrong slot" notice. The only hard constraints are physical ones: a mounting point holds one module, and a block only snaps into a slot of its own type. Everything else is allowed, and the simulation shows the consequence.
+One gate per step, stated as a number. Example: "Mount 7–10 actuators to continue." Nothing else blocks progress.
+Single learner. Remove Player A/B toggle, roles, contribution tracker, equity bar, dual observation log, the 2-second verbal-agreement prompt, "Fusion VR control stand", "magnetic assembly bay" and all other dyadic or VR-training leftovers.
+Copy budget. Each step has one title (≤ 6 words) and one instruction sentence (≤ 20 words). No paragraphs of explanation anywhere in the learner-facing UI. Explanations live in the researcher's briefing, not on screen.
+If a proposed UI element is not required by Section 2 and does not come from the robot's behaviour, do not build it.
+2. The five steps
+Each step is specified as: Screen (what is on it) · Learner does · System responds · Done when · Logged.
+Step 1 — Define your agent (P)
+Title: Set your robot's priorities. Instruction: All six tasks are required. Decide how much each outcome matters.
+Screen. The six task cards (name + one-line description, from tasks.js), all shown as the fixed mission — no selecting, no "active task", no multi-task mode. Below them, four sliders: Coverage, Safety, Time, Hazard Response. A live total that must read 100%. A robot preview whose colour and demo behaviour follow the dominant weight (the four colour/behaviour pairs in the existing design flow §1.3).
+Learner does. Moves sliders until they sum to 100.
+System responds. Preview updates in real time. If two opposing weights are both high, the preview shows the trade-off (e.g., fast but reckless); no error text.
+Done when. Sum = 100.
+Logged. Final weights, time in step.
+Step 2 — Know your world (E + S)
+Title: Inspect the apartment, then give your robot senses. Instruction: Walk the apartment. Then mount the sensors your robot needs.
+2a. Environment inspection. The learner moves through the apartment in any of the three views (2D blueprint, 3D orbit, FPS). Five hotspots are visible in all three views (currently only the 2D map shows them — this is a bug): hidden spill in the kitchen, roaming cat, cluttered living room, hallway cable, charging dock. Approaching or clicking a hotspot shows its one-line environment label (keep the existing five labels; they describe the world, not the answer). Scattered objects (paper, cans) must render in all three views.
+2b. Sensor mounting. Left: the 15 sensor cards from sensors.js, in random order, no badges, no "Misses" text. Right: a robot silhouette with 11 empty mounting points. The learner drags (or clicks) a card onto the robot; the module appears at a mounting point and is highlighted. Counter reads "N / 11 mounted". Remove the task-row drop zones from the earlier design; the task cards from Step 1 stay visible as a reference strip only.
+2c. Robot POV. Button: See what your robot sees. Opens the first-person sensor view of the apartment, rendered only from mounted sensors (unmounted = that channel is simply absent; no warning text). This is the moment the learner discovers blind spots. Fix the current bug where POV cannot be entered.
+Done when. 8–11 sensors mounted. (POV is not gated; whether it was opened is logged.)
+Logged. Each mount/unmount with timestamp and order; hotspot visits; POV entered (yes/no, duration, which view).
+Step 3 — Give your robot a body (A)
+Title: Give your robot a body. Instruction: Mount the parts your robot needs to do its six tasks.
+Screen. The 14 actuator cards from actuators.js, in random order, no category headings, each with icon, name, one sentence. A 3D robot assembly view with 10 empty mounting points. The six task cards remain visible as a reference strip.
+Learner does. Places cards on the robot; may remove and swap freely.
+System responds. Each placed module appears on the body and plays its one-second animation (wheels spin, arm extends, mop lowers, etc. — keep the existing animation table). Nothing else. No "required modules" meter, no "bonded/open" labels, no progress percentage.
+Done when. 7–10 actuators mounted. No correctness check.
+Logged. Each place/remove/swap with timestamp and order; final set.
+Step 4 — Program your robot
+Title: Program your robot. Instruction: For each task, build a rule: what it senses, when, what it does.
+Screen. Canvas with six task zones (top to bottom, same order as Step 1). Each zone has four slots: SENSE → CONDITION → ACTION → CONTROL (optional). All slots start empty. No starter rule. Library on the side with four shelves (SENSE 15, CONDITION 20, ACTION 23, CONTROL 6), every block visible, each with name and one line.
+Learner does. Drags blocks into slots. Slots fill left to right.
+System responds. The only enforced constraint is slot type (a SENSE block cannot go into an ACTION slot; it simply does not snap). A CONDITION that does not match the SENSE, an ACTION whose actuator is not mounted, and a SENSE whose sensor is not mounted are all placeable. They will fail visibly in Step 5. Remove the incompatibility bounce, the amber "broken link" glow, the "this condition needs a different sensor" label and all alert() calls. When a zone has SENSE + ACTION filled, the small robot preview (the apartment view in miniature, or the main apartment view itself in 2D) starts running that rule, and the three-line trace panel shows SENSING / DECIDING / ACTING for the last tick. This preview is the only feedback in Step 4.
+Done when. At least one zone has SENSE and ACTION filled. On "Continue", one line: Your robot will attempt N of 6 tasks. It does not block.
+Logged. Every block place/remove/swap with zone, slot, timestamp, order; preview rule firings.
+Step 5 — Test, debug, revise
+Title: Run it. Instruction: Watch your robot. Then fix what went wrong.
+Screen. The full apartment with the robot running autonomously (the engine, rebuilt to the contract in Section 6). A task outcome strip: six tiles, one per task, each showing a status icon (not started / in progress / done / failed) that updates live. A dashboard with four dimension scores and one weighted total (Section 6.3; formula on hover). The trace panel (point at the robot to see SENSING / DECIDING / ACTING). A single observation log: the learner can stamp ✓ / ✗ / ? on what the robot just did, with an optional short note. Buttons: Run · Pause · Reset · Speed.
+After the run. The six tiles expand into one line each stating what happened, in the fixed wording of Section 6.2 (e.g., Picked up 3 objects, released none at the bin.). These lines describe observed behaviour only. They never name a fix, a sensor, an actuator or a block the learner should have chosen.
+Debug. Replace the "three debug moves" cards and the 2-second prompt with three plain buttons: Edit sensors (Step 2) · Edit body (Step 3) · Edit rules (Step 4). Which one the learner presses is the data that the three debug moves were meant to capture; no separate "execute move" UI.
+Reflection prompt. When any dimension score drops below its value at the start of the run, show the four-option prompt once per run as a panel beside the robot (not a modal): Your robot just [behaviour]. Was it behaving irrationally, or rationally with a wrong specification? Options unchanged: sensor / rule / actuator / weights. Selecting an option closes the panel; it does not navigate anywhere.
+Closing reflection. After the learner presses Finish, one open-text prompt (existing wording, §5.5). Then the summary screen: purpose, weights, sensors, actuators, tasks completed, scores (first run vs. final run), number of revisions and which steps were revisited. One Download log button.
+Done when. Learner presses Finish.
+Logged. Scores at the end of every run; every stamp; every reflection selection with latency; every return to an earlier step; closing text.
+3. What the learner-facing UI never says
+Use this as a search-and-remove checklist in the codebase.
+Remove
+Where it currently appears
+Misses: / Cannot: / Limit: lines
+sensor cards, actuator cards
+⭐ task-recommendation badges, task-highlight-card
+Step 2, Step 3
+distractor-warning, "Check if relevant", "Redundant"
+Step 2, Step 3
+"Capacity Valid" / "Chassis Full" badges, required-modules meter, "BONDED / OPEN"
+Step 2, Step 3
+alert() of any kind; "Incompatible"; "wrong slot"; amber broken-link glow
+Step 2, Step 4
+Pre-selected sensors, actuators, DEFAULT_RULE_TEMPLATES on load
+state.js
+Active-task / multi-task selector
+Step 1
+Player A/B, roles, contribution counts, equity bar, dual log, verbal-agreement overlay, kiosk, "magnetic assembly bay", "Fusion VR" labels
+Steps 1, 3, 5, summary
+Category headings on actuator cards
+Step 3
+Any paragraph longer than one sentence
+all steps
+Data fields such as isDistractor, recommendedSensors, requiredActuators, misses, category stay in js/data/ — they are needed for scoring and post-session analysis — but nothing in js/view/ may render them.
+4. Views and navigation
+The three apartment views (2D blueprint, 3D orbit, FPS) are kept. The five hotspots, scattered objects, the cat, spills and the robot must render consistently in all three. Fix the FPS left/right turning bug.
+The five steps are reachable from the step bar at any time after they have been unlocked. From Step 5 the three Edit buttons jump directly to Steps 2, 3, 4 and back.
+One sound per event type (snap, remove, run, score drop). Fix the current sound bug (sound plays on wrong events / repeats).
+5. Logging (keep js/logging/session-log.js, simplify)
+One CSV per session. One row per event. Columns: timestamp, step, event, target_id, detail. Event types: WEIGHT_SET, HOTSPOT_VIEWED, POV_ENTERED, POV_EXITED, SENSOR_MOUNTED, SENSOR_REMOVED, ACTUATOR_MOUNTED, ACTUATOR_REMOVED, BLOCK_PLACED, BLOCK_REMOVED, RULE_FIRED, RUN_STARTED, RUN_ENDED (with four scores + total), STAMP, REFLECTION_SELECTED (with latency), STEP_REVISITED, CLOSING_TEXT. Remove PlayerID from every row. Remove dual-log.js.
+6. Simulation contract (changes to js/sim/engine.js)
+Section 1 only works if every failure is visible and attributable to something the learner chose. The current engine breaks this in four ways: (a) when no rule fires, an autopilot steers the robot to the nearest target of the "active task", so most movement is not the learner's design; (b) an ACTION executes even when its actuator is not mounted; (c) THEN sequences are not executed, so no multi-step task (pick up → carry → release) can succeed through rules; (d) the only feedback is an aggregate score, which cannot say which task failed. The contract below fixes all four.
+6.1 Execution rules
+All six tasks run in every test; remove activeTaskFocus and every branch that depends on it.
+Driving is a body function, decided by what the robot can perceive. The robot explores on its own, and steers toward the nearest perceived target: dirt it can see (Floor Map Sensor sees all cells; Floor Dirt Sensor sees only the cell underfoot), objects in the Vision Sensor cone, a destination reported by the Destination Sensor, the dock when a rule has asked for it. Driving requires Wheel Drive and Body Rotation to be mounted; without them the robot does not move. Learners never author path-planning; they author what the robot does when it perceives something.
+Every ACTION checks its actuator. If the actuator is not mounted, nothing happens in the world and the trace reads ACTING: Vacuum ON — no actuator. Same for SENSE: an unmounted sensor's rule never fires and the trace reads SENSING: Floor Dirt Sensor — not mounted when that rule is inspected.
+CONTROL blocks execute as documented: THEN runs the second action on the next tick; WAIT delays; REPEAT UNTIL / WHILE re-fire each tick; PRIORITY: HIGH wins ties. Remove the hard-coded obstacle-avoidance "bypass" that fabricates a SENSE_04 → COND_01 → ACT_01 trace; built-in collision reflexes may exist but their trace line must read built-in reflex, never a learner block.
+One tick, one winning rule (existing behaviour), 10 Hz.
+6.2 Task outcomes (what the six tiles report)
+Each task has one observable success condition and a small set of observable end states. The engine records which state was reached; the UI prints the matching line verbatim. All counts come from the world, not from an answer key.
+Task
+Done when
+End-state lines (one is shown)
+1 Vacuum the floor
+all dirt cells cleaned
+Cleaned N of M dirty cells. · Never vacuumed. · Vacuum ran but nothing was cleaned. · Vacuumed on a spill N times.
+2 Pick up and sort
+every object in its correct destination
+Sorted N of M objects. · Never grabbed anything. · Picked up N, released none at a destination. · Released N objects in the wrong place.
+3 Clean spills
+all wet cells cleaned
+Mopped N of M spills. · Never mopped. · Mop ran but nothing was cleaned.
+4 Avoid the cat
+zero near-misses while moving
+Stopped for the cat every time. · Kept moving with the cat within reach N times.
+5 Slow near people
+zero fast passes near the person
+Slowed down for the person every time. · Passed the person at full speed N times.
+6 Return to dock
+docked and charging before battery hit 0
+Docked at N% battery. · Battery ran out before docking. · Reached the dock but never connected.
+During the run, the same events are visible in the apartment: a carried object rides on the robot; a released object stays where it was dropped; the bin lid opens on a correct deposit; the LED colours follow the existing table. Nothing is scored that cannot be seen.
+6.3 Scores
+Total = Σ (weight_d / 100) × score_d, d ∈ {Coverage, Safety, Time, Hazard}, using the Step 1 weights.
+Dimension
+Computed from the 6.2 counters
+Coverage
+(dirt cleaned ÷ dirt at start) × 0.7 + (objects sorted ÷ objects at start) × 0.3
+Safety
+100 − 8 × cat near-misses − 5 × fast passes near the person (floor 0)
+Time
+100 if every attempted task finished within the run limit, decreasing with time over the limit (limit value set by the researcher; see Section 8)
+Hazard Response
+(spills mopped ÷ spills at start) × 100 − 25 × vacuum-on-spill events (floor 0)
+Coverage, Safety and Hazard match the current engine; Time replaces the current battery-percentage proxy, which does not measure time. All constants live in one block at the top of engine.js. The hover text on each score shows its row from this table.
+7. Known bugs to fix in the same pass
+Robot POV cannot be entered from Step 2.
+Hotspots and scattered objects are only visible in the 2D blueprint view.
+FPS 360 left/right turning is broken.
+Sound plays on the wrong events.
+Dashboard percentage has no visible definition (Section 6.3 fixes this).
+Task outcomes are invisible: pick-up never completes, actuators have no effect, movement is autopilot (Section 6.1 and 6.2 fix this).
+8. Decisions still open (for the researcher, not the coding agent)
+Sensor gate. Kept at 8–11. With 11 correct sensors and 11 mounting points, a learner who mounts a distractor loses a slot for a needed sensor, which is the intended trade-off. Confirm the lower bound.
+Engine scope. Section 6 is the largest change in this brief. It is required, not optional: without it the test run cannot show which step was wrong, and the whole feedback-from-the-robot design collapses. Budget it first.
+Starter rule. The earlier design pre-loaded one incomplete rule (Distance → NEAR → Emergency Stop) to seed debugging. This brief starts the canvas empty per the 16 Oct note. If first-run failures turn out to be too total (robot does nothing), reinstate the single starter rule.
+Reflection prompt frequency. Once per run is specified here to avoid interruption. The original design triggered it on every score drop.
+Time dimension. The run limit (120 s in the earlier discussion) needs pilot calibration before it is used in the Time score.
+References
+Kapur, M. (2008). Productive failure. Cognition and Instruction, 26(3), 379–424. Papert, S. (1980). Mindstorms: Children, computers, and powerful ideas. Basic Books. Russell, S., & Norvig, P. (2010). Artificial intelligence: A modern approach (3rd ed.). Prentice Hall.
+
+
+User-approved amendment — multiple rules per task zone (27 Oct 2026)
+This amendment supersedes the one-chain-per-task-zone constraint in Section 5. Preserve six fixed task zones and start with one empty rule per zone. Each zone offers Add rule and Remove rule; keep the sole remaining row by disabling its removal. Added rows have empty typed slots, without templates, hints, semantic validation or an arbitrary rule cap. All rows participate in the same one-action-per-tick arbitration. Attempted-task counts and Time completion count distinct task IDs, at most six. Use stable rule IDs for controls, execution, row highlighting and event attribution; preserve both editor scroll positions and the active library selection. Configuration changes restart WAIT and clear queued THEN actions to prevent stale execution; pause/resume without changes preserves controls. Keep the existing five-column CSV and include stable task/rule identities and removed-rule slots in its event details. All other requirements remain in force.
