@@ -58,8 +58,7 @@ test('THEN second action runs on the next tick ahead of a continually firing pri
 test('THEN editor exposes a typed second action and permits an unmounted action',()=>{
   const state=new appState.constructor();state.setRuleSlot(0,'control','CTRL_04');assert.equal(state.setRuleSlot(0,'secondaryAction','ACT_15'),true);assert.equal(state.setRuleSlot(0,'secondaryAction','SENSE_01'),false);
   assert.equal(acceptsBlock('secondaryAction',ACTION_BLOCKS[0]),true);
-  const view=Object.create(BlockCanvasView.prototype);assert.match(view.renderTaskZone(state.rules[0],0),/data-slot="secondaryAction"/);
-  state.setRuleSlot(0,'control',null);assert.doesNotMatch(view.renderTaskZone(state.rules[0],0),/data-slot="secondaryAction"/);
+
 });
 test('destination sensor reports only learner-selected goals and connector never selects or teleports',()=>{
   const {world,engine,robot}=fixture();appState.selectedTasks=['TASK_1','TASK_2','TASK_6'];appState.installedSensors.add('SENSE_03');robot.heldObject=world.objects[0];
@@ -155,19 +154,19 @@ test('mounted map navigation cleans current dirt while locked spill rules remain
   rule(0,{sense:'SENSE_06',condition:'COND_04',action:'ACT_11'});Object.assign(robot,{x:world.wetCells[0].x,y:world.wetCells[0].y});engine.tick();assert.ok(engine.mopTicks>0);assert.equal(world.wetCells[0].cleaned,true);
 });
 test('fresh formal runs discard a previous run THEN queue after a sensor revision',()=>{
-  const {engine,robot}=fixture();appState.installedSensors.add('SENSE_02');appState.installedActuators.add('ACTUATOR_LED');rule(0,{sense:'SENSE_02',condition:'COND_09',action:'ACT_18',control:'CTRL_04',secondaryAction:'ACT_20'});
+  const {engine,robot}=fixture();appState.installedSensors.add('SENSE_02');appState.installedActuators.add('ACTUATOR_LED');rule(0,{sense:'SENSE_02',action:'ACT_18',control:'CTRL_04',secondaryAction:'ACT_20'});
   engine.start();engine.pause();engine.tick();assert.equal(engine.activeRuleFired.action,'ACT_18');engine.endRun('revision');appState.installedSensors.delete('SENSE_02');engine.start();engine.pause();engine.tick();assert.equal(engine.activeRuleFired,null);assert.match(engine.lastTrace.sense,/not mounted/);assert.match(robot.ledColor,/59, 130, 246/);engine.endRun();
 });
 test('queued THEN cannot execute after its sensing module is removed within the same run',()=>{
-  const {engine}=fixture();appState.installedSensors.add('SENSE_02');appState.installedActuators.add('ACTUATOR_LED');rule(0,{sense:'SENSE_02',condition:'COND_09',action:'ACT_18',control:'CTRL_04',secondaryAction:'ACT_20'});
+  const {engine}=fixture();appState.installedSensors.add('SENSE_02');appState.installedActuators.add('ACTUATOR_LED');rule(0,{sense:'SENSE_02',action:'ACT_18',control:'CTRL_04',secondaryAction:'ACT_20'});
   engine.start();engine.pause();engine.tick();appState.installedSensors.delete('SENSE_02');engine.tick();assert.equal(engine.activeRuleFired,null);assert.match(engine.lastTrace.sense,/not mounted/);appState.installedSensors.add('SENSE_02');engine.tick();assert.equal(engine.activeRuleFired.action,'ACT_18','removed sensor invalidates the old continuation rather than postponing it');engine.endRun();
 });
 test('fresh formal runs restart WAIT while pause/resume retains elapsed WAIT ticks',()=>{
-  const {engine}=fixture();appState.installedSensors.add('SENSE_02');appState.installedActuators.add('ACTUATOR_LED');rule(0,{sense:'SENSE_02',condition:'COND_09',action:'ACT_18',control:'CTRL_03'});
+  const {engine}=fixture();appState.installedSensors.add('SENSE_02');appState.installedActuators.add('ACTUATOR_LED');rule(0,{sense:'SENSE_02',action:'ACT_18',control:'CTRL_03'});
   engine.start();engine.pause();for(let i=0;i<10;i++){engine.tick();assert.equal(engine.activeRuleFired,null);}engine.endRun('revision');engine.start();engine.pause();
   for(let i=0;i<10;i++){engine.tick();assert.equal(engine.activeRuleFired,null);}engine.start();engine.pause();for(let i=0;i<10;i++){engine.tick();assert.equal(engine.activeRuleFired,null);}engine.tick();assert.equal(engine.activeRuleFired.action,'ACT_18');engine.endRun();
 });
 test('pause/resume and speed changes preserve a legitimate pending THEN continuation',()=>{
-  const {engine}=fixture();appState.installedSensors.add('SENSE_02');appState.installedActuators.add('ACTUATOR_LED');rule(0,{sense:'SENSE_02',condition:'COND_09',action:'ACT_18',control:'CTRL_04',secondaryAction:'ACT_20'});
+  const {engine}=fixture();appState.installedSensors.add('SENSE_02');appState.installedActuators.add('ACTUATOR_LED');rule(0,{sense:'SENSE_02',action:'ACT_18',control:'CTRL_04',secondaryAction:'ACT_20'});
   engine.start();engine.pause();engine.tick();engine.start();engine.setSpeed(5);engine.pause();engine.tick();assert.equal(engine.activeRuleFired.action,'ACT_20');engine.endRun();
 });

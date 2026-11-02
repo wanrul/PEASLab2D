@@ -330,7 +330,29 @@ window.addEventListener('DOMContentLoaded', () => {
     }
   }
 
+  function showOverview() {
+    if(appState.isRobotPovActive)povRenderer.exit();
+    if(blockCanvasContainer)blockCanvasContainer.style.display='none';
+    if(stepsPanelEl)stepsPanelEl.style.display='block';
+    document.querySelector('.step-modal-body').classList.remove('mounting-body','rule-body');
+    modalOverlay.classList.remove('testing-layout');
+    modalBadge.textContent='PEASLab · Overview';
+    modalHeading.textContent='Your household robot challenge';
+    stepsView.renderOverview();
+    modalOverlay.style.display='flex';
+    modalCloseBtn.disabled=!appState.overviewStarted;
+    appState.record('OVERVIEW_VIEWED','overview');
+  }
+  window.showOverview=showOverview;
+  const overviewButton=document.createElement('button');
+  overviewButton.className='btn btn-outline overview-button';
+  overviewButton.textContent='Overview';
+  overviewButton.onclick=showOverview;
+  modalCloseBtn.before(overviewButton);
+
   function openStepModal(stepNumber) {
+    if(!appState.overviewStarted){showOverview();return;}
+    modalCloseBtn.disabled=false;
     if (appState.isRobotPovActive) povRenderer.exit();
     if (stepNumber !== undefined && stepNumber !== null) {
       if(appState.sessionFinished && stepNumber!==5)return;
@@ -344,6 +366,7 @@ window.addEventListener('DOMContentLoaded', () => {
   }
 
   function closeStepModal() {
+    if(!appState.overviewStarted)return;
     if (modalOverlay) {
       modalOverlay.style.display = 'none';
     }
@@ -517,6 +540,7 @@ window.addEventListener('DOMContentLoaded', () => {
   // Start in the fixed living-room walkthrough; open the workstation on demand.
   switchViewMode(map3d ? 'fps' : 'fallback');
   closeStepModal();
+  showOverview();
 
   console.log('🚀 PEASLab2D Initialized for Individual Learning.');
 });

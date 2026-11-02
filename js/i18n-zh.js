@@ -322,3 +322,41 @@ for (const [source, chinese] of Object.entries(ZH)) {
   const first = source.split(/(?<=[.!?])\s/)[0];
   if (first !== source && !ZH[first]) ZH[first] = chinese.split('。')[0] + '。';
 }
+
+Object.assign(ZH, {
+  'Overview':'任务总览', 'PEASLab · Overview':'PEASLab · 任务总览','Your household robot challenge':'你的家用机器人挑战',
+  'One robot. Three growing missions.':'一个机器人，三个逐步增加的任务。',
+  'Design your own household robot from an empty body and program. Each mission adds a responsibility; keep and improve your earlier design.':'从空的机身和程序开始设计自己的家用机器人。每个阶段增加一项任务，请保留并改进之前的设计。',
+  '1 · Vacuum the floor':'1 · 地面吸尘','2 · Add spill cleaning':'2 · 增加液体清洁','3 · Add pickup and sorting':'3 · 增加拾取和分类',
+  'Find and remove dirt throughout the apartment.':'找到并清除公寓各处的灰尘。',
+  'Keep vacuuming and clean spills without using suction on liquid.':'继续完成吸尘，并清洁洒出的液体；不要在液体上吸尘。',
+  'Keep both cleaning tasks and move scattered objects to their correct destinations.':'继续完成两项清洁任务，并把散落的物品放到正确的位置。',
+  'Common safety and charging':'共同要求：安全与充电',
+  'In every mission, navigate furniture and doorways, stop for the moving cat, slow near people and resume afterwards, and return to connect at the dock when battery is low.':'每个任务都要安全绕过家具并通过门口，遇到移动的猫时停车，靠近人时减速、离开后恢复速度，并在电量低时返回充电座连接充电。',
+  'Each fresh test starts at 35% battery. LOW means below 30%. Battery drains during work and charges only while physically connected. Your program must decide when to release the connector and continue.':'每次新测试从 35% 电量开始。LOW 表示低于 30%。工作会耗电，只有实际连接充电座后才会充电。你的程序需要决定何时断开连接并继续工作。',
+  'Your five PEAS steps':'五个 PEAS 设计步骤',
+  'Purpose → Sensors → Actuators → Logic → Test & debug. Revisit any unlocked step to improve your design.':'Purpose → Sensors → Actuators → Logic → Test & debug。可以返回任何已解锁的步骤改进设计。',
+  'Sensor budgets grow from 7 to 8 to 11; there are 10 actuator positions. These are provisional pilot settings, not recommendations.':'传感器数量上限依次为 7、8、11；执行器有 10 个安装位。这些是试点的暂定设置，不是推荐配置。',
+  'Advance after a formal run meets every current criterion. Final success means all three tasks and common safety and charging succeed in the same run.':'一次正式运行满足当前全部标准后才能进入下一阶段。最终达标需要在同一次运行中完成三个任务和共同的安全、充电要求。',
+  'Hardware, programs, purpose edits, observations and results carry forward. Overview can be revisited without losing your work.':'硬件、程序、目标修改、观察记录和结果都会保留。返回总览不会丢失当前工作。',
+  'Begin / return to design':'开始 / 返回设计',
+  'Drag a Behavior onto the workspace. Snap conditions, sensors and actions inside it. Use the IF gear to add ELSE IF and ELSE; stack actions in order.':'将 Behavior 拖入工作区，把条件、传感器和动作拼接进去。使用 IF 的齿轮添加 ELSE IF 和 ELSE，并按顺序连接动作。',
+  'Higher execution priorities run first. Waits keep their priority. Common safety and charging apply in every mission.':'执行优先级较高的行为先运行。等待中的行为保留优先级。每个任务都需要满足共同的安全与充电要求。',
+  'Every input in AND / OR must be available. Missing or unmodeled sensors are UNKNOWN, never false; an unknown IF does not enter ELSE.':'AND / OR 的每个输入都必须可用。未安装或未建模的传感器值为 UNKNOWN，不代表 false；IF 输入未知时不会执行 ELSE。',
+  'Programs remain available as you add missions. Disconnected blocks do not execute.':'增加任务时会保留已有程序。未连接的积木不会执行。',
+  'Preview program':'预览程序',
+  'Fresh runs start at 35% battery; LOW is below 30%. Every current task and common safety and charging criterion must succeed in the same run.':'新运行从 35% 电量开始；LOW 为低于 30%。所有当前任务及共同的安全、充电要求必须在同一次运行中达标。',
+  'Connect a condition and its sensor.':'请连接条件及其传感器。',
+  'Connect a compatible Sense block to each Condition.':'请为每个 Condition 连接兼容的 Sense 积木。',
+  'Attach action and control blocks inside a Behavior.':'请把动作与控制积木连接到 Behavior 内部。',
+  'Add actions inside your Behavior.':'请在 Behavior 中添加动作。',
+  'Walkable cell 24px forward has not been entered; Map required.':'前方 24px 的可通行网格尚未进入；需要 Map 传感器。',
+  'Walkable cell 24px forward has been entered; this does not mean CLEAN.':'前方 24px 的可通行网格已经进入过；这不代表 CLEAN。',
+  'Current physical cell has been entered; this does not mean CLEAN.':'当前实际网格已经进入过；这不代表 CLEAN。',
+  'Release the charging connector and clear the DOCK goal, without changing position or battery.':'释放充电连接器并清除 DOCK 目标，不改变位置或电量。',
+  'No active branch':'没有活动分支','Waiting':'正在等待','Program':'程序'
+});
+Object.assign(ZH, {
+  'Programs remain available as you add missions. Disconnected blocks and future-mission behaviors do not execute.':'增加任务时保留已有程序。未连接的积木和未来任务的行为暂不执行。',
+  'Program exceeds the supported 512 nodes or 32 nesting levels. Simplify it before running.':'程序超过 512 个节点或 32 层嵌套的支持上限。请简化后再运行。'
+});

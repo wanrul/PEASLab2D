@@ -5,20 +5,21 @@ import { join } from 'node:path';
 const artifacts=process.env.ARTIFACT_DIR || '/tmp/peaslab-localization';
 await mkdir(artifacts,{recursive:true});
 const { chromium } = await import(process.env.PLAYWRIGHT_MODULE);
-const browser = await chromium.launch({ executablePath: process.env.CHROME_PATH || '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome', headless:true, args:['--use-gl=angle','--use-angle=swiftshader','--enable-unsafe-swiftshader'] });
+const browser = await chromium.launch({ executablePath: process.env.CHROME_PATH || '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome', headless:true });
 const page = await browser.newPage({ viewport:{width:1440,height:1000} });
 const errors=[]; page.on('pageerror', error => errors.push(error.message));
 try {
-  await page.goto(process.env.TEST_URL || 'http://127.0.0.1:8089');
+  await page.goto(process.env.TEST_URL || 'http://127.0.0.1:8092');
   await page.waitForFunction(() => window.simEngine && window.openStepModal);
   await page.evaluate(()=>{window.map3d?.renderer.setPixelRatio(.4);window.map3d?.onResize();});
   console.log('Loaded app; checking keyboard, defaults and drafts');
   assert.equal(await page.locator('[data-language="zh-CN"]').count(),1,'Chinese switch exists');
   await page.locator('[data-language="zh-CN"]').focus();
   await page.keyboard.press('Space');
-  assert.equal(await page.locator('#stepModalOverlay').evaluate(n=>n.style.display),'none');
+  assert.equal(await page.locator('#stepModalOverlay').evaluate(n=>n.style.display),'flex');
   assert.equal(await page.evaluate(()=>window.currentViewMode),'fps');
   await page.locator('[data-language="en"]').click();
+  await page.locator('#beginDesign').click();
   await page.evaluate(async () => {
     window.testState=(await import('/js/state.js')).appState;
     window.testLog=(await import('/js/logging/session-log.js')).sessionLogger;
@@ -57,14 +58,14 @@ try {
   await page.screenshot({animations:'disabled',path:join(artifacts,'zh-sensors.png')});
   await toggle('en');
   await page.evaluate(()=>{testState.toggleSensor('SENSE_05');testState.toggleActuator('ACTUATOR_VACUUM');testState.unlockedStep=4;window.openStepModal(4);});
-  await page.locator('.palette-block-card').first().click();
-  await page.evaluate(()=>window.selectedBlock=document.querySelector('.palette-block-card.selected'));
+  await page.evaluate(()=>{window.savedWorkspace=robotBlockWorkspace;window.savedBlock=robotBlockWorkspace.newBlock('PEAS_BEHAVIOR');savedBlock.initSvg();savedBlock.render();savedBlock.moveBy(250,90);window.workspacePosition={x:robotBlockWorkspace.scrollX,y:robotBlockWorkspace.scrollY,scale:robotBlockWorkspace.scale};});
   await toggle('zh-CN');
-  assert.equal(await page.evaluate(()=>selectedBlock===document.querySelector('.palette-block-card.selected')),true);
-  assert.match(await page.locator('.card-desc').first().innerText(),/[\u3400-\u9fff]/);
+  assert.equal(await page.evaluate(()=>savedWorkspace===robotBlockWorkspace&&savedBlock===robotBlockWorkspace.getBlockById(savedBlock.id)),true);
+  assert.deepEqual(await page.evaluate(()=>({x:robotBlockWorkspace.scrollX,y:robotBlockWorkspace.scrollY,scale:robotBlockWorkspace.scale})),await page.evaluate(()=>workspacePosition));
+  assert.match(await page.locator('.structured-editor header').innerText(),/[\u3400-\u9fff]/);
   console.log('Mounting and rule selection preserved; checking running simulation');
   // Real run remains active with the same run ID and advancing clock.
-  await page.evaluate(()=>{testState.setRuleSlot(testState.rules[0].id,'sense','SENSE_05');testState.setRuleSlot(testState.rules[0].id,'action','ACT_09');testState.unlockedStep=5;window.openStepModal(5);window.simEngine.start();});
+  await page.evaluate(()=>{testState.setProgram([{id:'browser-behavior',type:'behavior',taskId:'TASK_1',priority:1,body:[{id:'browser-action',type:'action',command:'ACT_09'}]}]);testState.unlockedStep=5;window.openStepModal(5);window.simEngine.start();});
   await page.waitForTimeout(250);
   const runBefore=await page.evaluate(()=>({id:simEngine.runId,tick:simEngine.tickCount,starts:testLog.events?.filter(e=>e.event==='RUN_STARTED').length,ends:testState.runHistory.length}));
   await toggle('en'); await toggle('zh-CN'); await page.waitForTimeout(250);
@@ -88,13 +89,13 @@ try {
   assert.equal(await page.evaluate(()=>robotIdentity===map3d.robotGroup && modelIdentity===map3d.apartmentModel && testState.isRobotPovActive),true);
   assert.match(await page.locator('.close-pov-btn').innerText(),/退出 Robot POV/);
   await page.locator('.close-pov-btn').click();
-  console.log('Live feedback and POV preserved; checking all six stages');
+  console.log('Live feedback and POV preserved; checking all three stages');
   // Every cumulative stage, all criteria, defaults and both libraries render Chinese.
   await page.evaluate(async()=>{
     const {PILOT_STAGES}=await import('/js/pilot-config.js');
     window.testStages=PILOT_STAGES;
   });
-  for(let stage=1;stage<=6;stage++) {
+  for(let stage=1;stage<=3;stage++) {
     await page.evaluate(stage=>{testState.currentStage=stage;testState.selectedTasks=[...testStages[stage-1].taskIds];testState.stagePurposes[stage]=testState.createStagePurposes(stage);testState.stageResults[stage]={passingRunId:null,closingText:''};testState.unlockedStep=5;testState.currentStep=1;testState.notify('stageChanged',{stageId:stage});window.openStepModal();},stage);
     assert.equal(await page.evaluate(()=>testState.currentStep),1);
     assert.equal(await page.evaluate(()=>testState.currentStage),stage);
@@ -108,7 +109,7 @@ try {
     }
     assert.doesNotMatch(await page.locator('.stage-purposes').innerText(),/Success criterion|Clean at least|Correctly sort|Stop in every|Below \d+% battery/);
   }
-  await page.screenshot({animations:'disabled',path:join(artifacts,'zh-stage-six.png')});
+  await page.screenshot({animations:'disabled',path:join(artifacts,'zh-stage-three.png')});
   await page.evaluate(()=>window.openStepModal(3));
   assert.match(await page.locator('.module-card span:last-child').first().innerText(),/[\u3400-\u9fff]/);
   await page.screenshot({animations:'disabled',path:join(artifacts,'zh-actuators.png')});
@@ -117,11 +118,11 @@ try {
   await page.evaluate(()=>simEngine.endRun('evaluate'));
   await page.waitForSelector('#reflectionPanel');
   const rects=await page.evaluate(()=>Object.fromEntries(['simFloatingHud','reflectionPanel'].map(id=>{const r=document.getElementById(id).getBoundingClientRect();return[id,{x:r.x,y:r.y,right:r.right,bottom:r.bottom}];})));
-  console.log('Stage 6 failed-run layout:',JSON.stringify(rects));
+  console.log('Stage 3 failed-run layout:',JSON.stringify(rects));
   const overlap=(a,b)=>a.x<b.right && a.right>b.x && a.y<b.bottom && a.bottom>b.y;
   assert.equal(overlap(rects.simFloatingHud,rects.reflectionPanel),false,'reflection panel does not overlap live six-criterion HUD');
   assert.doesNotMatch(await page.locator('#hudCriteria').innerText(),/dirt cells cleaned|Partially achieved|Not achieved|moving encounters/);
-  await page.screenshot({animations:'disabled',path:join(artifacts,'zh-stage-six-failure.png')});
+  await page.screenshot({animations:'disabled',path:join(artifacts,'zh-stage-three-failure.png')});
   await page.setViewportSize({width:800,height:900});
   await page.screenshot({animations:'disabled',path:join(artifacts,'zh-narrow.png')});
   const narrow=await page.evaluate(()=>{
@@ -141,7 +142,7 @@ try {
   await toggle('en'); await toggle('zh-CN');
   assert.equal(await page.locator('#closingReflection').inputValue(),'Give your robot senses');
   await page.locator('#showSummary').click();
-  assert.equal(await page.locator('.stage-summary').count(),6);
+  assert.equal(await page.locator('.stage-summary').count(),3);
   assert.match(await page.locator('.stage-summary').first().innerText(),/Continue/);
   assert.match(await page.locator('.stage-summary').last().innerText(),/Give your robot senses/);
   const summaryBefore=await snapshot();
@@ -153,10 +154,10 @@ try {
   assert.equal(await page.locator('html').getAttribute('lang'),'zh-CN');
   const blocked=await browser.newPage();
   await blocked.addInitScript(()=>{Object.defineProperty(window,'localStorage',{get(){throw new Error('blocked');}});});
-  await blocked.goto(process.env.TEST_URL || 'http://127.0.0.1:8089');await blocked.waitForFunction(()=>window.simEngine);
+  await blocked.goto(process.env.TEST_URL || 'http://127.0.0.1:8092');await blocked.waitForFunction(()=>window.simEngine);
   assert.equal(await blocked.locator('html').getAttribute('lang'),'en');
   await blocked.locator('[data-language="zh-CN"]').click();assert.equal(await blocked.locator('html').getAttribute('lang'),'zh-CN');
   await blocked.close();
   assert.deepEqual(errors,[]);
-  console.log('PASS: localization browser regressions, six stages, live run, drafts, selections, POV, persistence and blocked storage.');
+  console.log('PASS: localization browser regressions, three stages, live run, drafts, selections, POV, persistence and blocked storage.');
 } finally { await browser.close(); }

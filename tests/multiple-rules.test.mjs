@@ -15,25 +15,12 @@ function fixture(t) {
   return {world:new ApartmentWorld()};
 }
 function author(rule, slots) { for (const [slot,block] of Object.entries(slots)) appState.setRuleSlot(rule.id,slot,block); }
-function editor() {
-  const container={zone:{scrollTop:420},list:{scrollTop:170,dataset:{shelf:'Action'}},html:'',
-    get innerHTML(){return this.html;},set innerHTML(html){this.html=html;this.zone={scrollTop:0};this.list={scrollTop:0,dataset:{shelf:'Action'}};},
-    querySelector(selector){return selector==='.task-zones-column'?this.zone:selector==='.palette-list'?this.list:{};},
-    querySelectorAll(){return [];}};
-  const view=Object.create(BlockCanvasView.prototype);view.container=container;view.activeShelf='Action';view.selectedBlockForPlacement={id:'ACT_22'};
-  return {view,container};
-}
-
 test('adding empty rules keeps unlocked task groups; removing one preserves neighbors and never removes a sole row',t=>{
   fixture(t);const state=appState;
   assert.equal(typeof state.addRule,'function');
   const original=state.rules[1];author(original,{sense:'SENSE_15',action:'ACT_13'});
   const added=state.addRule('TASK_2');assert.equal(added.taskId,'TASK_2');assert.notEqual(added.id,original.id);
   assert.deepEqual(Object.values(added.slots),[null,null,null,null,null,null]);
-  const {view,container}=editor();view.render();
-  assert.equal((container.html.match(/class="task-zone-card"/g)||[]).length,2);
-  assert.equal((container.html.match(/class="rule-row"/g)||[]).length,3);
-  assert.match(container.html,/Rule 2/);assert.match(container.html,/aria-label="Add rule for Pick up and sort scattered objects/);
   assert.equal(state.removeRule(added.id),true);assert.equal(original.slots.action,'ACT_13');
   assert.equal(state.removeRule(original.id),false);assert.equal(state.rules.length,6);
   const replacement=state.addRule('TASK_2');assert.notEqual(replacement.id,added.id);
@@ -63,17 +50,11 @@ test('authored TASK_2 rules choose a goal, pick up, carry and correctly release 
   for(const e of logger.events.filter(e=>e.event==='RULE_FIRED')){const d=JSON.parse(e.detail);assert.equal(e.target_id,d.ruleId);assert.equal(d.taskId,'TASK_2');assert.ok(fired.has(d.ruleId));}
 });
 
-test('attempt counts remain distinct unlocked tasks in editor and Step5; stage completion includes cleaning',t=>{
-  const {world}=fixture(t);assert.equal(typeof appState.addRule,'function');const first=appState.rules[1];author(first,{sense:'SENSE_15',action:'ACT_13'});
-  for(let i=0;i<8;i++)author(appState.addRule('TASK_2'),{sense:'SENSE_03',action:'ACT_15'});
-  assert.deepEqual(appState.getAttemptedTaskIds(),['TASK_2']);
-  const {view,container}=editor();view.render();const priorWindow=globalThis.window;globalThis.window={navigateStep(){}};t.after(()=>globalThis.window=priorWindow);
-  // Retain one node per selector for handler output.
-  const nodes={};container.querySelector=selector=>selector==='.task-zones-column'?container.zone:selector==='.palette-list'?container.list:(nodes[selector] ||= {});view.attachEvents();nodes['.rule-continue'].onclick();assert.equal(nodes['.rule-attempt-count'].textContent,'Rules configured for 1 current task.');
-  const engine=new SimulationEngine(world);window.simEngine=engine;
-  const steps=Object.create(StepsView.prototype);steps.panel={innerHTML:'',querySelector:selector=>selector==='#runTrace'?null:{},querySelectorAll:()=>[]};steps.renderStep5();assert.match(steps.panel.innerHTML,/Rules configured for 1 current task/);
-  world.objects.forEach(o=>o.sorted=true);world.dirtCells.forEach(d=>d.cleaned=true);engine.runActive=true;engine.elapsedSeconds=0.5;engine.updateOutcomes();assert.equal(engine.completionSeconds,0.5);
-  for(const r of appState.rules)author(r,{sense:'SENSE_02',action:'ACT_18'});assert.equal(appState.getAttemptedTaskIds().length,2);
+test('attempt counts distinguish active authored mission and common programs; duplicate behaviors count once',t=>{
+  const {world}=fixture(t);appState.selectedTasks=['TASK_1','TASK_3','TASK_4','TASK_5','TASK_6'];
+  const b=(id,taskId)=>({id,type:'behavior',taskId,priority:1,body:[{id:id+'a',type:'action',command:'ACT_18'}]});
+  appState.setProgram([b('one','TASK_1'),b('two','TASK_1'),b('cat','TASK_4'),b('locked','TASK_2')]);
+  assert.deepEqual(appState.getAttemptedTaskIds(),['TASK_1','TASK_4']);appState.program=[];
 });
 
 test('removed or shifted identical THEN rows cannot inherit another row continuation, including preview restore',t=>{
@@ -91,33 +72,7 @@ test('WAIT starts fresh for an identical neighboring row after the original row 
   for(let i=0;i<19;i++)engine.tick();assert.equal(engine.activeRuleFired,null);engine.tick();assert.equal(engine.activeRuleFired.ruleId,next.id);
 });
 
-test('editing, adding and removing retain selected library category, block and both scroll positions',t=>{
-  fixture(t);assert.equal(typeof appState.addRule,'function');const {view,container}=editor();const off=appState.on('rulesChanged',()=>view.render());t.after(off);
-  view.render();const added=appState.addRule('TASK_6');author(added,{action:'ACT_22'});appState.removeRule(added.id);
-  assert.equal(view.activeShelf,'Action');assert.equal(view.selectedBlockForPlacement.id,'ACT_22');assert.equal(container.zone.scrollTop,420);assert.equal(container.list.scrollTop,170);assert.equal((container.html.match(/role="tab"/g)||[]).length,4);
-});
-
-test('trace highlights only the stable fired row even when two rows share an action and THEN fires',t=>{
-  fixture(t);const first=appState.rules[0],second=appState.rules[1];author(first,{sense:'SENSE_02',action:'ACT_18'});author(second,{sense:'SENSE_02',action:'ACT_18'});
-  const rows=[first,second].map(rule=>({dataset:{ruleId:rule.id,taskIndex:String(appState.rules.indexOf(rule))},classList:{toggle(_class,active){this.active=active;}}}));
-  const view=Object.create(BlockCanvasView.prototype);view.container={querySelector:()=>null,querySelectorAll:()=>rows};const prior=globalThis.window;globalThis.window={};t.after(()=>globalThis.window=prior);
-  view.updateTracePulse({ruleId:second.id,action:'ACT_18'});assert.deepEqual(rows.map(r=>r.classList.active),[false,true]);
-  view.updateTracePulse({ruleId:first.id,action:'ACT_20'});assert.deepEqual(rows.map(r=>r.classList.active),[true,false]);
-});
-
-test('Add, Remove and placement handlers update only their named task and stable row after indices shift',t=>{
-  fixture(t);
-  const original=appState.rules[1],last=appState.rules[5];
-  const add={dataset:{taskId:'TASK_2'}},remove={dataset:{ruleId:original.id}};
-  const slot={dataset:{ruleId:last.id,slot:'action'},querySelector:()=>null};
-  const view=Object.create(BlockCanvasView.prototype);view.selectedBlockForPlacement={id:'ACT_22',kind:'Action'};
-  view.container={querySelector:()=>({}),querySelectorAll:selector=>({'.add-rule':[add],'.remove-rule':[remove],'.slot-container':[slot]}[selector]||[])};
-  view.attachEvents();add.onclick();
-  assert.equal(appState.rules.filter(r=>r.taskId==='TASK_2').length,2);
-  assert.equal(appState.rules.filter(r=>r.taskId!=='TASK_2').length,5);
-  const added=appState.rules.find(r=>r.taskId==='TASK_2'&&r.id!==original.id);
-  assert.ok(Object.values(added.slots).every(v=>v===null));
-  slot.onclick({target:{closest:()=>null}});assert.equal(last.slots.action,'ACT_22');assert.equal(added.slots.action,null);
-  remove.onclick();assert.equal(appState.rules.some(r=>r.id===original.id),false);assert.equal(appState.rules.some(r=>r.id===added.id),true);assert.equal(last.slots.action,'ACT_22');
-  remove.dataset.ruleId=added.id;remove.onclick();assert.equal(appState.rules.filter(r=>r.taskId==='TASK_2').length,1);
+test('live execution highlights the stable AST node, not every occurrence of its action',t=>{
+  fixture(t);const highlighted=[];const view=Object.create(BlockCanvasView.prototype);view.workspace={highlightBlock:id=>highlighted.push(id)};view.container={querySelector:()=>null};const prior=globalThis.window;globalThis.window={};t.after(()=>globalThis.window=prior);
+  view.updateTracePulse({nodeId:'first',action:'ACT_18'});view.updateTracePulse({nodeId:'second',action:'ACT_18'});view.updateTracePulse({});assert.deepEqual(highlighted,['first','second',null]);
 });

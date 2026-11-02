@@ -4,6 +4,7 @@
  * Keeps legacy private score diagnostics separate from pilot feedback and passage.
  */
 
+import { evaluateProgram } from './program.js';
 import { appState } from '../state.js';
 import { ACTION_BLOCKS, CONDITION_BLOCKS, SENSE_BLOCKS } from '../data/blocks.js';
 import { sound } from '../view/audio.js';
@@ -53,6 +54,7 @@ export class SimulationEngine {
     this.previousMoving = false;
     this.encounters = { cat: false, human: false, catViolation: false, humanViolation: false, catResponse: false, humanResponse: false, wet: [] };
     this.ruleRuntime = {};
+    this.programRuntime = {};
     this.pendingThen = [];
     this.rulesRevision = appState.rulesRevision;
     this.firedTasks = new Set();
@@ -99,6 +101,7 @@ export class SimulationEngine {
     if (this.tickInterval) return;
     if (!options.preview && !this.runActive) {
       this.world.reset();
+      this.world.robot.battery = this.simulationSettings.initialBatteryPercent;
       this.resetRuntime();
       appState.simTick = 0;
       this.runActive = true;
@@ -353,6 +356,11 @@ export class SimulationEngine {
       percepts.SENSE_07 = 'LAYOUT_AND_OBSERVATIONS';
       // Static geometry supports coverage; task-cell coordinates require a mounted local channel.
       percepts.mapCellUnvisited = !this.enteredCells.has(this.currentCoverageCell());
+      const fx=robot.x+Math.cos(robot.heading)*24, fy=robot.y+Math.sin(robot.heading)*24;
+      if(!this.world.checkCollision(fx,fy,robot.radius)) {
+        percepts.mapForwardVisited=this.enteredCells.has(`${Math.round(fx/24)*24},${Math.round(fy/24)*24}`);
+        percepts.mapForwardUnvisited=!percepts.mapForwardVisited;
+      }
       percepts.mapCoverage = [...this.coverageVisited];
       if (installed.has('SENSE_05')) percepts.mapDirt = [...this.perceivedDirt.values()].filter(d=>!d.cleaned);
       if (installed.has('SENSE_06')) percepts.mapWet = [...this.perceivedWet.values()].filter(w=>!w.cleaned);
@@ -452,7 +460,7 @@ export class SimulationEngine {
     const r=this.world.robot;
     return ({ ACT_07:r.isSlow, ACT_08:!r.isSlow, ACT_09:r.vacuumActive, ACT_10:!r.vacuumActive,
       ACT_11:r.mopDeployed, ACT_12:!r.mopDeployed, ACT_13:r.armExtended, ACT_16:!r.armExtended, ACT_14:Boolean(r.heldObject), ACT_15:!r.heldObject && !r.gripperClosed,
-      ACT_17:r.isDocked, ACT_24:this.selectedGoal==='BIN', ACT_25:this.selectedGoal==='TABLE', ACT_26:this.selectedGoal==='DOCK'
+      ACT_17:r.isDocked, ACT_27:!r.isDocked && !r.isCharging, ACT_24:this.selectedGoal==='BIN', ACT_25:this.selectedGoal==='TABLE', ACT_26:this.selectedGoal==='DOCK'
     })[action] || false;
   }
 
@@ -463,6 +471,7 @@ export class SimulationEngine {
       COND_01: p.SENSE_04 === 'NEAR', COND_02: p.SENSE_04 === 'BLOCKED',
       COND_03: p.SENSE_05 === 'DIRTY', COND_04: p.SENSE_06 === 'WET',
       COND_05: p.mapCellUnvisited === true,
+      COND_23: p.mapForwardUnvisited === true, COND_24: p.mapForwardVisited === true, COND_25: p.mapCellUnvisited === false,
       COND_06: sense === 'SENSE_05' ? p.SENSE_05 === 'CLEAN' : appState.installedSensors.has('SENSE_05') && p.SENSE_05 === 'CLEAN',
       COND_07: p.SENSE_01 === 'DETECTED', COND_08: p.SENSE_02 === 'LOW', COND_09: p.SENSE_02 === 'HIGH',
       COND_10: p.SENSE_03?.reached, COND_11: p.SENSE_03?.far,
@@ -480,8 +489,15 @@ export class SimulationEngine {
     // a runtime snapshot. Pausing/resuming does not change the revision.
     if (this.rulesRevision !== appState.rulesRevision) {
       this.ruleRuntime = {};
+    this.programRuntime = {};
       this.pendingThen = [];
       this.rulesRevision = appState.rulesRevision;
+    }
+    if(appState.program.length || appState.blockWorkspace !== null) {
+      const decision=evaluateProgram(this,appState.program,percepts,appState);
+      this.lastTrace=decision?.trace || this.programDiagnostic || {sense:null,decide:'No active branch',act:null};
+      this.world.robot.traceState=this.lastTrace;
+      return decision;
     }
     const candidates = [];
     let inspected = null;
@@ -522,6 +538,7 @@ export class SimulationEngine {
 
   executeAction(decision) {
     const robot = this.world.robot, act = decision.action;
+    if(decision.waiting){this.lastTrace=decision.trace;return false;}
     this.lastTrace = { ...decision.trace };
     this.world.robot.traceState = this.lastTrace;
     const rule = decision.ruleId ? appState.rules.find(rule => rule.id === decision.ruleId) : appState.rules[decision.ruleIndex];
@@ -578,6 +595,9 @@ export class SimulationEngine {
         break;
       }
       case 'ACT_16': robot.armExtended=false; break;
+      case 'ACT_27':
+        if(robot.isDocked || robot.isCharging){robot.isDocked=false;robot.isCharging=false;if(this.selectedGoal==='DOCK')this.selectedGoal=null;}
+        break;
       case 'ACT_17':
         if (Math.hypot(robot.x-this.world.dock.x,robot.y-this.world.dock.y)<30 && robot.battery>0) {
           this.dockedAtBattery ??= robot.battery;
@@ -677,7 +697,7 @@ export class SimulationEngine {
     // The physical cell is visited even when its rounded center is too close
     // to a wall to be a planning waypoint. Sensor reads never consume this visit.
     this.enteredCells.add(this.currentCoverageCell());
-    for(const p of this.coveragePoints()) if(Math.hypot(p.x-r.x,p.y-r.y)<18) this.coverageVisited.add(p.key);
+    for(const p of this.coveragePoints()) if(Math.hypot(p.x-r.x,p.y-r.y)<5) this.coverageVisited.add(p.key);
   }
 
   nextExplorationTarget() {
@@ -797,7 +817,7 @@ export class SimulationEngine {
       this.catSafetyViolations?`Kept moving with the cat within reach ${this.catSafetyViolations} times.`:done[3]?'Stopped for the cat every time.':this.catOpportunities?'Moved near the cat without stopping.':'No moving encounter with the cat.',
       this.humanSafetyViolations?`Passed the person at full speed ${this.humanSafetyViolations} times.`:done[4]?'Slowed down for the person every time.':this.humanOpportunities?'Moved near the person without slowing.':'No moving encounter with the person.',
       done[5]?`Docked at ${Math.round(this.dockedAtBattery)}% battery.`:failed[5]?'Battery ran out before docking.':this.reachedDock?'Reached the dock but never connected.':'Never approached the dock.'];
-    this.taskOutcomes=done.map((success,i)=>({taskId:`TASK_${i+1}`,status:success?'done':failed[i]||final?'failed':started[i]?'in_progress':'not_started',summary:summaries[i]})).filter(outcome => appState.selectedTasks.includes(outcome.taskId));
+    this.taskOutcomes=done.map((success,i)=>({taskId:`TASK_${i+1}`,status:success?'done':failed[i]||final?'failed':started[i]?'in_progress':'not_started',summary:summaries[i]})).filter(outcome => appState.selectedTasks.includes(outcome.taskId)).sort((a,b)=>appState.selectedTasks.indexOf(a.taskId)-appState.selectedTasks.indexOf(b.taskId));
     const allDone=this.criteriaResults.every(c=>c.status==='Achieved');
     if(!allDone) this.completionSeconds=null;
     else if(this.runActive && this.completionSeconds===null)this.completionSeconds=this.elapsedSeconds;

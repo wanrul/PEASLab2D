@@ -30,6 +30,9 @@ export const SENSE_BLOCKS = [
 ];
 
 export const CONDITION_BLOCKS = [
+  { id: 'COND_23', kind: 'Condition', name: 'IF forward cell is UNVISITED', requiresSense: ['SENSE_07'], desc: 'Walkable cell 24px forward has not been entered; Map required.' },
+  { id: 'COND_24', kind: 'Condition', name: 'IF forward cell is VISITED', requiresSense: ['SENSE_07'], desc: 'Walkable cell 24px forward has been entered; this does not mean CLEAN.' },
+  { id: 'COND_25', kind: 'Condition', name: 'IF current cell is VISITED', requiresSense: ['SENSE_07'], desc: 'Current physical cell has been entered; this does not mean CLEAN.' },
   { id: 'COND_01', kind: 'Condition', name: 'IF obstacle is NEAR', requiresSense: ['SENSE_04'], desc: 'Distance sensor returns NEAR in front/back/sides.' },
   { id: 'COND_02', kind: 'Condition', name: 'IF obstacle is BLOCKED', requiresSense: ['SENSE_04'], desc: 'Distance sensor returns BLOCKED (<0.3m ahead).' },
   { id: 'COND_03', kind: 'Condition', name: 'IF floor is DIRTY', requiresSense: ['SENSE_05'], desc: 'Dirt sensor reads DIRTY on current cell.' },
@@ -55,6 +58,7 @@ export const CONDITION_BLOCKS = [
 ];
 
 export const ACTION_BLOCKS = [
+  { id: 'ACT_27', kind: 'Action', name: 'DOCK CONNECTOR RELEASE', requiresActuator: 'ACTUATOR_DOCK_PIN', desc: 'Release the charging connector and clear the DOCK goal, without changing position or battery.' },
   { id: 'ACT_01', kind: 'Action', name: 'MOVE FORWARD', requiresActuator: 'ACTUATOR_WHEELS', desc: 'Drive forward at current speed setting.' },
   { id: 'ACT_02', kind: 'Action', name: 'MOVE BACKWARD', requiresActuator: 'ACTUATOR_WHEELS', desc: 'Reverse drive straight back.' },
   { id: 'ACT_03', kind: 'Action', name: 'ROTATE LEFT 90°', requiresActuator: 'ACTUATOR_ROTATION', desc: 'Pivot 90° counterclockwise in place.' },

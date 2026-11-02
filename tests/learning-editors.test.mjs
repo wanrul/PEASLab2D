@@ -16,23 +16,11 @@ test('only block kind determines whether a slot accepts it', () => {
   }
 });
 
-test('rule placement allows unmounted senses and actions and mismatched conditions', () => {
-  const calls = [];
-  const original = appState.setRuleSlot;
-  const previousWindow = globalThis.window;
-  globalThis.window = {};
-  appState.setRuleSlot = (...args) => calls.push(args);
-  try {
-    const view = Object.create(BlockCanvasView.prototype);
-    assert.equal(view.place(0, 'sense', SENSE_BLOCKS[0]), true);
-    assert.equal(view.place(0, 'condition', CONDITION_BLOCKS.at(-1)), true);
-    assert.equal(view.place(0, 'action', ACTION_BLOCKS.at(-1)), true);
-    assert.equal(view.place(0, 'action', SENSE_BLOCKS[0]), false);
-    assert.equal(calls.length, 3);
-  } finally {
-    appState.setRuleSlot = original;
-    if (previousWindow === undefined) delete globalThis.window; else globalThis.window = previousWindow;
-  }
+test('nested authoring allows unmounted hardware but validates explicit sensor provenance',()=>{
+  const s=new appState.constructor();const condition={id:'c',type:'condition',sensor:'SENSE_05',command:'COND_03'};
+  const behavior={id:'b',type:'behavior',priority:1,taskId:'TASK_1',body:[{id:'i',type:'if',branches:[{condition,body:[{id:'a',type:'action',command:'ACT_09'}]}],otherwise:[]}]};
+  assert.equal(s.setProgram([behavior]),true);assert.equal(s.installedSensors.size,0);assert.equal(s.installedActuators.size,0);
+  condition.sensor='SENSE_01';assert.equal(s.setProgram([behavior]),false);assert.equal(s.program[0].body[0].branches[0].condition.sensor,'SENSE_05');
 });
 
 test('every module card renders the same neutral fields', () => {

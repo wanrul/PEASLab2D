@@ -133,3 +133,16 @@ html[lang="zh-CN"] .module-card, html[lang="zh-CN"] .palette-block-card { line-h
   .sim-floating-hud { bottom:62px; width:calc(100vw - 400px); max-width:none; box-sizing:border-box; flex-wrap:wrap; padding:8px 10px; max-height:calc(100vh - 440px); overflow:auto; }
   .sim-floating-hud .hud-criteria { flex-basis:100%; max-width:none; }
 }
+
+/* Nested authoring stays mounted across language and PEAS-step changes. */
+.structured-editor { display:flex; flex-direction:column; width:100%; min-width:0; gap:10px; }
+.structured-editor header p { margin:6px 0; color:#475569; }
+.blockly-host { height:470px; min-height:340px; width:100%; border:1px solid #cbd5e1; border-radius:12px; overflow:hidden; }
+.editor-bottom { display:flex; align-items:center; gap:12px; flex-wrap:wrap; }
+.editor-bottom canvas { width:180px; height:135px; border-radius:8px; }
+.program-status { color:#475569; font-size:14px; }
+.overview-missions { display:grid; grid-template-columns:repeat(3,1fr); gap:14px; margin:20px 0; }
+.overview-missions article { padding:18px; border:1px solid #cbd5e1; border-radius:14px; background:#f8fafc; }
+.common-heading { grid-column:1 / -1; padding-top:16px; }
+@media(max-width:700px){ .overview-missions{grid-template-columns:1fr;} .blockly-host{height:420px;} .structured-editor header p{font-size:13px;} }
+.structured-editor #ruleApartmentPreview { width:180px; height:135px; max-width:180px; flex:0 0 180px; }

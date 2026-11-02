@@ -1,77 +1,66 @@
-# PEASLab — staged single-learner pilot
+# PEASLab — three cumulative household missions
 
-A desktop robot-design prototype using the existing apartment, collision model and complete task, sensor, actuator and block catalogs. No package installation or internet is required.
+A local, single-learner robot-design prototype using the existing apartment, collision model, and complete original task, sensor, actuator and block libraries. No package installation or runtime internet connection is required.
 
-## Open
+## Open locally
 
 ```bash
 node server.js 8089
 ```
 
-Open http://localhost:8089 and keep the server running. Sessions are in memory; refreshing starts a new session. Download the session log before closing.
+Open http://localhost:8089 and keep the server running. Sessions are held in memory; refresh starts a new session. Download the session log before closing.
 
-## Current workflow
+## Workflow
 
-Start in FPS at the fixed living-room position (130, 645; heading −0.662), with Workstation closed. Keep FPS, 3D overhead/orbit and Robot POV; exiting POV restores the previous page and camera. The internal overhead canvas is used for rule previews and as a WebGL failure fallback. It is not a normal learner view option.
+Overview opens first and explains the challenge before Purpose. Begin enters the five steps: **Purpose → Sensors → Actuators → Logic → Test & debug**. Overview can be revisited without discarding work. Closing Workstation returns to the existing fixed living-room FPS view. FPS, Orbit and Robot POV retain their existing camera and return behavior.
 
-1. **Vacuum the floor** — up to 3 sensors.
-2. **Add object pickup and sorting** — 6 sensors.
-3. **Add spill cleaning without vacuuming liquid** — 7 sensors.
-4. **Add stopping for the moving cat** — 8 sensors.
-5. **Add slowing near the participant and resuming afterward** — 9 sensors.
-6. **Add explicit low-battery return and physical docking** — 10 sensors.
+| Stage | Cumulative mission | Sensor budget |
+| --- | --- | --- |
+| 1 | Vacuum the floor (`TASK_1`) | 7 |
+| 2 | Add spill cleaning (`TASK_3`) | 8 |
+| 3 | Add pickup and sorting (`TASK_2`) | 11 |
 
-Every stage retains earlier tasks. A recorded passing formal run and **Continue to next stage** unlock the next stage at Purpose. Hardware, stable rule IDs, rules, observations and earlier results carry forward.
-Each stage follows Purpose → Sensors → Actuators → Logic → Test & Debug. Steps unlock progressively and remain revisitable within the stage. Purpose requires an explicit priority for every current task: Thorough cleaning / Speed for cleaning; Correct sorting / Speed for sorting. Priorities record intent; they do not silently alter motion or execution.
+**Common safety and charging apply from stage 1:** navigate furniture and doorways, stop during moving cat encounters (`TASK_4`), slow near people and resume after leaving (`TASK_5`), and select, reach and physically connect to the dock when battery is low (`TASK_6`). These remain stable internal behavior IDs, grouped as common requirements rather than extra numbered missions or Purpose forms.
 
-The complete 15-sensor and 14-actuator libraries stay available at every stage. Hardware starts empty. The chassis has 11 physical sensor positions; stage sensor budgets above apply, alongside 10 actuator positions, with **no minimum**. Cards carry no recommendation or correctness labels. Installed sensors have labeled attachments on the body; actuator assembly remains procedural. Library scrolling is independent of the fixed assembly panel.
+A recorded passing formal run and explicit Continue unlock the next stage. The current hardware, authored programs, edited purposes/priorities, observations and results carry forward. Earlier missions must still succeed. Final success requires all functional and shared criteria in the same formal run. Purpose priorities record learner intent; execution priorities are authored independently in Logic.
 
-The Logic editor shows only unlocked task groups. Each has at least one empty typed rule row; additional rows have no imposed limit. Sense (15), Condition (22), Action (26) and Flow Control (CTRL_01–04) retain the full original entries, with two negative conditions and three explicit destination choices added. **High/Normal execution priority** uses CTRL_05/06 in a separate row selector, so it can coexist with THEN, WAIT or repeat. THEN exposes a typed second action. Editing retains shelf and rule-column scroll positions. Missing hardware and semantic mismatches are observed during execution rather than rejected or corrected.
+The full 15-sensor and 14-actuator libraries remain available without recommendation or correctness labels. Initial hardware and programs are empty. There is no minimum selection; there are 10 actuator positions. The 7/8/11 budgets are provisional pilot settings, not validated thresholds.
 
-## Researcher criteria
+## Nested programs
 
-Edit `js/pilot-config.js` before a pilot. The defaults are **uncalibrated pilot operational settings, not validated thresholds**:
+Logic uses locally vendored **Blockly 13.4.0** with genuine drag, snap, nesting, stack reordering, zoom, pan and execution highlighting. Start with a Behavior header, choose its mission/common group and execution priority, and connect statements. Future-mission groups are labeled and do not execute until active. All original Sense, Condition, Action and Control IDs/names remain available.
 
-- All stages: clean every initial dirt cell. Stage 2 onward: also correctly sort every object. Stage 3 onward: mop every spill with zero vacuum-on-liquid events.
-- Stage 4 onward: stop in every moving cat encounter (at least one), with zero unsafe crossings. Stage 5 onward: slow in every moving person encounter (at least one), resume at least once, and make zero fast passes.
-- Stage 6: observe battery below 30%, explicitly select DOCK, travel and physically connect before depletion.
-- Every stage: `speedLimitSeconds: null`. Duration is observed without a deadline. A selected Speed priority does not invent a target.
-- Shared simulation endurance: `batteryDrainPerTick: 0.009` at 10 Hz; full battery lasts approximately 1,111 simulation seconds and LOW occurs around 778 seconds. This replaces arbitrary 200-second endurance that was infeasible with local exploration. It is a common simulation-only researcher setting, without refills or a real-world battery interpretation. Cat dwell is deterministic (25 ticks) for comparable resets.
-If a researcher supplies a finite numeric speed target, the criterion checks actual simulation time to complete the required functions. It reports incomplete work as unmet even before that target. The Timer block's limit condition uses that same explicit target; with no target it cannot fire on an invented timeout. There is no learner-facing researcher setup screen.
+- Connect each Condition to its compatible Sense block. Combine conditions with AND / OR.
+- Use the IF gear to add ELSE IF and ELSE. Branches contain ordered action sequences or nested controls.
+- REPEAT UNTIL and REPEAT WHILE take explicit conditions; WAIT UNTIL suspends program advancement until its condition is met. WAIT 2 seconds retains the original command; THEN holds a sequence.
+- Higher numeric execution priorities run first, independently of nesting. A waiting behavior retains arbitration priority while ongoing physical navigation continues. Use an explicit STOP for stopping motion. A higher-priority safety behavior may interrupt a lower sequence; active branch conditions are reevaluated on resume.
+- Every compound input must be available. Missing/unmodeled inputs propagate UNKNOWN through both AND and OR. UNKNOWN is never CLEAN or known false, and never chooses ELSE. Traces identify missing input provenance.
+- Disconnected and incomplete blocks remain visible drafts but do not execute an older hidden program. Programs are limited to 512 AST nodes and 32 nesting levels; runtime work is bounded to 256 node visits per tick.
 
-## Testing and feedback
+The canonical serialized behavior tree, stable node IDs and the editable Blockly workspace are saved in application state and formal run configuration. The existing SimulationEngine remains the single physical executor. Legacy flat-rule APIs remain for retained primitive regression coverage, but the learner editor authors trees.
 
-Run starts a fresh formal run from the same reset environment and fresh counters, clock and control queues. Pause/resume and playback Speed preserve the current run. Reset clears the world and runtime, retaining the assembled design, observations, stage history and recorded passing runs. Rule/hardware/purpose edits invalidate stale WAIT/THEN runtime. Preview restores world entity identities and counters and cannot record a formal run or unlock a stage.
+## Battery and physical behavior
 
-Only unlocked task rules can fire. **Map supplies static layout/coverage and remembers only observations from mounted Dirt/Wet sensors.** It cannot locate unseen dirt or spills. Exploration uses unvisited walkable geometry; mounted Vision retains only objects it actually observed in its bounded camera cone, including its visibly held object. Removing a sensor withholds its channels and navigation memory. Unknown is never CLEAN.
+Every fresh formal Run starts at **35%**, with LOW below **30%**. Normal drain is 0.009 percentage points per 10 Hz tick: LOW is encountered after about 56 simulation seconds, rather than waiting around 13 minutes. Physical docking charges at 0.25 points per tick. These are operational pilot settings, not real-world battery estimates. The settings are exported with every run.
 
-The learner authors **SELECT DESTINATION BIN / TABLE / DOCK**. Destination sensing reports that chosen goal, never a type-derived answer. Correct physical release sorts; wrong releases remain visible. Connector Engage never chooses the dock. Navigation assists aiming and doorway routing, while rules perform cleaning, pickup, choice, release and connection. Wheels plus Rotation are required to move; existing collision geometry remains safe without Distance sensing. A satisfied setting yields its arbitration slot; a THEN pair yields only when both actions are satisfied. HIGH still preempts NORMAL and queued THEN wins ties over primary actions.
+`SELECT DESTINATION BIN / TABLE / DOCK` chooses a goal. Destination sensing reports the learner's choice, never an automatic classification answer. Wheels and Rotation are required for movement. Existing navigation assistance follows observed goals and static geometry; local sensors never reveal unseen dirt, liquid or objects.
 
-Continuous vacuuming can be a valid blanket-cleaning design without Dirt sensing. Inspection and clean-floor vacuum duration are observations, with no invented pass threshold.
-Test & Debug and the HUD show factual criterion evidence with **Achieved / Partially achieved / Not achieved**, counts and elapsed simulation seconds. There are no numeric grades or weighted totals. Use **End run & evaluate** to record an outcome. A failed formal ending can show one short reflection about goal, sensors, rules or actuators; unfinished progress and previews do not trigger one. Direct edit buttons return to all four design steps. Each intermediate stage uses its retained recorded passing run, explicitly labeled as such; a later failed revision is separately recorded and never presented as current success. Finish in Stage 6 opens a closing reflection and a per-stage summary.
+`DOCK CONNECTOR ENGAGE` requires actual proximity and the connector actuator. The additive `ACT_27 DOCK CONNECTOR RELEASE` uses that same actuator, disconnects and clears a selected DOCK goal without teleporting or changing battery. The learner must author release to resume work. Battery HIGH retains its existing meaning: above 60%.
 
-## Research records
+Map's existing current-cell UNVISITED remains unchanged. New `COND_23/24` report forward-cell UNVISITED/VISITED using installed Map, actual heading, walkable geometry and prior visits. `COND_25` reports current-cell VISITED. VISITED does not mean CLEAN. Rotation remains a literal turn, never a hidden search operation. Coverage waypoints count as reached within 5 pixels so local sensing does not leave gaps after repeated docking detours.
 
-**Download log** exports one CSV: `timestamp,step,event,target_id,detail`. Detail includes stage IDs, current task IDs and event order. Purpose changes and task priorities are separate from rule execution priorities. Rule changes and firings retain stable task/rule identity. Run-start/end records contain the configuration, researcher criteria and simulation settings, stage budgets, chosen goals, observed maps, factual outcomes, counts, elapsed seconds and pass result. New snapshots contain no scores or weights. Stage start/end/transition, observations and reflections retain their stage context. No Player A/B, participant-ID column or network synchronization is used.
+## Testing, feedback and records
 
-Private legacy scoring helpers remain only for regression coverage; they do not determine passage, learner feedback or new run exports. Older build briefs and upstream design documents are historical references superseded by the staged pilot workflow. See `docs/STAGED_PILOT.md` for implementation and research details.
+Run resets world/runtime and starts a formal trial. Pause and playback speed preserve progress. Reset and edits clear stale sequence/wait state; Preview restores world identities, control state, maps and counters and cannot unlock a stage. Formal feedback uses factual counts, duration, and **Achieved / Partially achieved / Not achieved**, with no grades or learning-gain claims.
 
-## Verification
+Download log exports `timestamp,step,event,target_id,detail`. Details include stage/task context, event order, stable program/node identity, sensor provenance, configuration, researcher criteria, simulation settings, actual goal history, sensed memory, observations and run outcomes. Prior passing runs remain separately identified if a later revision fails.
+
+Use **中文 / English** at any time. Translation preserves hardware, programs, workspace identity/pan/zoom, user drafts and running simulation. Core terms, catalog names, commands and IDs stay English; learner text stays literal. Untouched factory purposes can display Chinese while canonical state stays English.
 
 ```bash
 node --test tests/*.test.mjs
 ```
 
-Default-apartment authored regressions complete all six cumulative stages with ordinary battery and actual movement/cleaning/sorting/encounters/docking. The regression suite covers stage passage, preview isolation, configuration carryover, fresh-run resets, rule controls, criteria, logs, mounted hardware, routing/collision and POV restoration. Portable checks retain every original catalog ID/name/item while allowing documented description changes and additions. See `docs/STAGED_PILOT.md` for thresholds, measured durations, controller support and limits. Collision geometry remains derived from the existing GLB; regenerate only when replacing the model:
+The suite includes three actual default-apartment structured solutions, normal movement/cleaning/mopping/sorting, shared safety encounters, docking, charging and explicit release. Test-only solutions are never installed into the learner workspace. Real-browser checks are `tests/structured.browser.mjs` and `tests/localization.browser.mjs`; set `TEST_URL`, `PLAYWRIGHT_MODULE`, `CHROME_PATH` and optional `ARTIFACT_DIR` for the local environment. No browser package is required by the application.
 
-```bash
-node scripts/extract-apartment-collision.mjs
-```
-
-## Interface language
-
-Use the bottom-left **中文 / English** buttons at any time, including during a run or Robot POV. English is the initial fallback; the browser remembers the last choice when local storage is available. Switching changes presentation only: it preserves the assembled robot, rules, drafts, selections, simulation and research records. Core PEAS terms, hardware/block names and execution tokens remain English. Participant notes and edited purposes/reflections stay literal; untouched factory purposes can display in Chinese while the model and CSV retain English.
-
-Translations live in `js/i18n-zh.js`; anchored live-feedback templates and reversible DOM updates live in `js/i18n.js`. Add translations when changing authored UI copy, keep user-generated text inside `data-i18n-skip`, and bind factory purpose inputs with their stable stage/task key. Never translate catalogs or simulation state, rebuild an editor on a language switch, or translate raw perception data. Existing 2D draw calls and 3D canvas textures read the current presentation language.
-
-The normal Node suite includes dictionary/catalog coverage and presentation regressions. The optional real-browser regression is `tests/localization.browser.mjs`: start the local server, set `PLAYWRIGHT_MODULE` to an installed Playwright module, optionally set `TEST_URL` and `CHROME_PATH`, then run it with Node. No browser package is added to this project. Its temporary graphics downscale affects that test page only.
+See [pilot details](docs/STAGED_PILOT.md) for limitations and dependency provenance. Existing geometry can be regenerated only when intentionally replacing the model, using `node scripts/extract-apartment-collision.mjs`.

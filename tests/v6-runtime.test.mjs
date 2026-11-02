@@ -7,7 +7,7 @@ import { ApartmentWorld } from '../js/sim/world.js';
 
 test('empty design, physical capacities, task priority gate and unlocked revisits', () => {
   const s = new appState.constructor();
-  assert.deepEqual(s.selectedTasks, ['TASK_1']);
+  assert.deepEqual(s.selectedTasks, ['TASK_1','TASK_4','TASK_5','TASK_6']);
   assert.equal(s.installedSensors.size, 0);
   assert.equal(s.installedActuators.size, 0);
   assert.ok(s.rules.every(r => Object.values(r.slots).every(v => v === null)));

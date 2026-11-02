@@ -11,35 +11,15 @@ test('priority weights use ten-percent increments, including initial values',()=
   state.setWeight('Coverage',104);assert.equal(state.weights.Coverage,100);
 });
 
-test('rule library shows one category and retains both columns after a block edit',()=>{
-  const container={zone:{scrollTop:310},list:{scrollTop:160,dataset:{shelf:'Action'}},html:'',
-    get innerHTML(){return this.html;},
-    set innerHTML(value){this.html=value;this.zone={scrollTop:0};this.list={scrollTop:0,dataset:{shelf:'Action'}};},
-    querySelector(selector){if(selector==='.task-zones-column')return this.zone;if(selector==='.palette-list')return this.list;return {};},
-    querySelectorAll(){return [];}};
-  const view=Object.create(BlockCanvasView.prototype);view.container=container;view.activeShelf='Action';
-  view.render();
-  assert.match(container.innerHTML,/role="tablist"/);
-  assert.equal((container.innerHTML.match(/role="tab"/g)||[]).length,4);
-  assert.match(container.innerHTML,/MOVE FORWARD/);
-  assert.ok(!container.innerHTML.includes('Animal Detection Sensor'));
-  assert.equal(container.zone.scrollTop,310);
-  assert.equal(container.list.scrollTop,160);
+test('nested editor exposes the complete original library and structural blocks',async()=>{
+  const {toolbox}=await import('../js/view/structured-blocks.js');
+  const {ALL_BLOCKS}=await import('../js/data/blocks.js');
+  const box=toolbox();const types=box.contents.flatMap(c=>c.contents.map(b=>b.type));
+  for(const b of ALL_BLOCKS)assert.ok(types.includes(b.id),b.id);
+  for(const type of ['PEAS_BEHAVIOR','controls_if','logic_operation','WAIT_UNTIL'])assert.ok(types.includes(type));
 });
-
-test('dropping an action into a lower rule preserves both scroll offsets',()=>{
-  const slot={dataset:{taskIndex:'5',slot:'action'},querySelector:()=>null};
-  const container={zone:{scrollTop:500},list:{scrollTop:700,dataset:{shelf:'Action'}},html:'',
-    get innerHTML(){return this.html;},
-    set innerHTML(value){this.html=value;this.zone={scrollTop:0};this.list={scrollTop:0,dataset:{shelf:'Action'}};},
-    querySelector(selector){if(selector==='.task-zones-column')return this.zone;if(selector==='.palette-list')return this.list;return {};},
-    querySelectorAll(selector){return selector==='.slot-container'?[slot]:[];}};
-  const view=Object.create(BlockCanvasView.prototype);view.container=container;view.activeShelf='Action';
-  const previous=appState.rules[5].slots.action;
-  const off=appState.on('rulesChanged',()=>view.render());
-  try {
-    view.render();slot.ondrop({preventDefault(){},dataTransfer:{getData:()=> 'ACT_22'}});
-    assert.equal(appState.rules[5].slots.action,'ACT_22');
-    assert.equal(container.zone.scrollTop,500);assert.equal(container.list.scrollTop,700);
-  } finally {off();appState.rules[5].slots.action=previous;}
+test('rerendering an existing nested workspace preserves the live workspace instead of replacing its contents',()=>{
+  const oldWindow=globalThis.window,oldFrame=globalThis.requestAnimationFrame;let resized=null;
+  globalThis.window={Blockly:{svgResize:w=>resized=w}};globalThis.requestAnimationFrame=f=>f();
+  try{const view=Object.create(BlockCanvasView.prototype);view.workspace={scrollX:420,scrollY:170};view.container={querySelector:()=>null,set innerHTML(_){throw new Error('Workspace destroyed');}};view.render();assert.equal(resized,view.workspace);assert.equal(view.workspace.scrollX,420);assert.equal(view.workspace.scrollY,170);}finally{globalThis.window=oldWindow;globalThis.requestAnimationFrame=oldFrame;}
 });

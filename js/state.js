@@ -4,6 +4,7 @@
  */
 
 import { DEFAULT_RULE_TEMPLATES, ALL_BLOCKS } from './data/blocks.js';
+import { validateProgram } from './sim/program.js';
 import { PILOT_STAGES, TASK_PURPOSES } from './pilot-config.js';
 
 class StateManager {
@@ -39,7 +40,9 @@ class StateManager {
     // Step 3: Actuators
     this.installedActuators = new Set();
 
-    // Step 4: Decision rules grouped in six fixed task zones.
+    // Step 4: Structured programs; legacy rules retain compatible primitive APIs.
+    this.program = [];
+    this.blockWorkspace = null;
     this.nextRuleId = 1;
     this.rulesRevision = 0;
     this.rules = DEFAULT_RULE_TEMPLATES.map(task => this.createRule(task));
@@ -83,9 +86,11 @@ class StateManager {
   }
 
   canContinue(step = this.currentStep) {
-    if (step === 1) return this.selectedTasks.every(id => Boolean(this.stagePurposes[this.currentStage]?.[id]?.priority));
+    if (step === 1) return PILOT_STAGES[this.currentStage-1].missionTaskIds.every(id => Boolean(this.stagePurposes[this.currentStage]?.[id]?.priority));
     if (step === 2) return this.installedSensors.size <= this.sensorBudget;
     if (step === 3) return this.installedActuators.size <= 10;
+    if (step === 4 && this.blockWorkspace !== null) return this.program.some(b=>this.selectedTasks.includes(b.taskId));
+    if (step === 4 && this.program.length) return true;
     if (step === 4) return this.getUnlockedRules().some(rule => rule.slots.sense && rule.slots.action);
     return step === 5;
   }
@@ -116,7 +121,7 @@ class StateManager {
   }
 
   createStagePurposes(stageId) {
-    return Object.fromEntries(PILOT_STAGES[stageId - 1].taskIds.map(id => [id, { purpose: TASK_PURPOSES[id].purpose, priority: null }]));
+    return Object.fromEntries(PILOT_STAGES[stageId - 1].missionTaskIds.map(id => [id, { purpose: TASK_PURPOSES[id].purpose, priority: null }]));
   }
 
   setTaskPurpose(taskId, purpose) {
@@ -139,12 +144,29 @@ class StateManager {
     return true;
   }
 
+  setProgram(program, workspace = this.blockWorkspace) {
+    if (!validateProgram(program)) return false;
+    let savedProgram, savedWorkspace;
+    try {
+      JSON.stringify(program); // Catch cycles even in non-executable metadata before changing state.
+      savedProgram=structuredClone(program);
+      savedWorkspace=structuredClone(workspace);
+    } catch { return false; }
+    this.program = savedProgram;
+    this.blockWorkspace = savedWorkspace;
+    this.rulesRevision++;
+    this.record('PROGRAM_CHANGED', 'program', { program: this.program, workspace: this.blockWorkspace });
+    this.notify('programChanged', { program: this.program });
+    return true;
+  }
+
   getUnlockedRules() { return this.rules.filter(rule => this.selectedTasks.includes(rule.taskId)); }
 
   get sensorBudget() { return PILOT_STAGES[this.currentStage - 1].sensorBudget; }
 
   getConfiguration() {
     return { stageId: this.currentStage, sensorBudget: this.sensorBudget, taskIds: [...this.selectedTasks], purposes: structuredClone(this.stagePurposes[this.currentStage]),
+      program: structuredClone(this.program), workspace: structuredClone(this.blockWorkspace),
       sensors: [...this.installedSensors], actuators: [...this.installedActuators], rules: structuredClone(this.getUnlockedRules()) };
   }
 
@@ -162,7 +184,7 @@ class StateManager {
     this.record('STAGE_TRANSITION', String(to), { from, to });
     this.currentStage = to;
     this.selectedTasks = [...PILOT_STAGES[to - 1].taskIds];
-    this.stagePurposes[to] = this.createStagePurposes(to);
+    this.stagePurposes[to] = { ...this.createStagePurposes(to), ...structuredClone(this.stagePurposes[from]) };
     this.stageResults[to] = { passingRunId: null, closingText: '' };
     this.currentStep = this.unlockedStep = 1;
     this.stepEnteredAt = Date.now();
@@ -242,6 +264,7 @@ class StateManager {
   }
 
   getAttemptedTaskIds() {
+    if(this.program.length)return [...new Set(this.program.filter(b=>this.selectedTasks.includes(b.taskId)).map(b=>b.taskId))];
     return [...new Set(this.getUnlockedRules().filter(rule => rule.slots.sense && rule.slots.action).map(rule => rule.taskId))];
   }
 

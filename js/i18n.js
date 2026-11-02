@@ -16,6 +16,9 @@ export function onLanguageChange(callback) { listeners.add(callback); return () 
 // Anchored templates accept only application-authored sentences. User text is excluded
 // at its DOM boundary, rather than guessed from the words a participant writes.
 const templates = [
+  [/^Programs configured for (\d+) active behavior groups\.$/, a => `已为 ${a} 个当前行为组编写程序。`],
+  [/^Unavailable input: (SENSE_\d+) \((.+)\)$/, (a,b) => `输入不可用：${a}（${b}）`],
+  [/^Missing actuator: (.+)$/, a => `缺少执行器：${a}`],
   [/^(.+): (Achieved|Partially achieved|Not achieved)$/, (a,b) => `${translate(a, 'zh-CN')}：${ZH[b]}`],
   [/^(.+) — not mounted$/, a => `${a} — 未安装`],
   [/^(.+) — no actuator$/, a => `${a} — 未安装所需 Actuator`],
