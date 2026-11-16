@@ -1,5 +1,11 @@
 import { apartmentCollision } from './apartment-collision-data.js';
+import { isRetainedPoint } from './apartment-layout.js';
 const architectureSegments = [...apartmentCollision.walls, ...apartmentCollision.boundaries];
+const dirtSeeds = [
+  [436,244], [980,1020], [1116,356], [316,972], [692,644], [124,564],
+  [1108,700], [644,1020], [124,204], [396,684], [868,452], [572,44],
+  [860,812], [332,452], [532,508], [204,748], [532,820]
+];
 
 /**
  * CollabPEAS - 2D Apartment World Model
@@ -80,10 +86,10 @@ export class ApartmentWorld {
     // Walls, floor coverage and furniture all use the same model coordinates.
     this.obstacles = apartmentCollision.furniture;
 
-    // Charging Dock Station (Living room north alcove)
+    // Charging Dock Station (Retained living-room north wall)
     this.dock = {
-      x: 580,
-      y: 160,
+      x: 410,
+      y: 50,
       width: 52,
       height: 42,
       angle: 0
@@ -109,7 +115,7 @@ export class ApartmentWorld {
     // Teleport Markers (Inspired by Fusion VR Training TeleportTargetMarker.cs)
     this.teleportMarkers = [
       { id: 'TP_LIVING', name: 'Living Room', x: 420, y: 380, icon: '🛋️' },
-      { id: 'TP_DOCK', name: 'Charging Dock', x: 580, y: 160, icon: '⚡' },
+      { id: 'TP_DOCK', name: 'Charging Dock', x: 410, y: 50, icon: '⚡' },
       { id: 'TP_KITCHEN', name: 'Kitchen', x: 330, y: 720, icon: '🍳' },
       { id: 'TP_DINING', name: 'Dining Room', x: 610, y: 840, icon: '🍽️' },
       { id: 'TP_BEDROOM', name: 'Bedroom', x: 880, y: 850, icon: '🛏️' },
@@ -152,8 +158,8 @@ export class ApartmentWorld {
       },
       {
         id: 'TAG_CHARGING_DOCK',
-        x: 580,
-        y: 160,
+        x: 410,
+        y: 50,
         dimension: 'Goal Localization',
         text: 'Charging Station: Requires reliable coordinate localization for docking return.',
         icon: '⚡'
@@ -171,7 +177,6 @@ export class ApartmentWorld {
       { id: 'TRASH_1', type: 'TRASH', name: 'Crumpled Paper', x: 360, y: 440, carried: false, disposed: false, icon: '📄' },
       { id: 'TRASH_2', type: 'TRASH', name: 'Soda Can', x: 500, y: 310, carried: false, disposed: false, icon: '🥫' },
       { id: 'CUP_1', type: 'CUP', name: 'Ceramic Mug', x: 420, y: 240, carried: false, disposed: false, icon: '☕' },
-      { id: 'FOOD_1', type: 'FOOD', name: 'Cat Food Bowl', x: 290, y: 780, carried: false, disposed: false, icon: '🥣' }
     ];
 
     // Fixed living-room entry pose (WASD / arrows remain available).
@@ -249,31 +254,14 @@ export class ApartmentWorld {
   }
 
   generateDirtCells() {
-    const list = [];
-    const dirtCoords = [
-      { x: 320, y: 310 }, { x: 340, y: 330 }, { x: 360, y: 350 },
-      { x: 470, y: 230 }, { x: 490, y: 250 }, { x: 510, y: 270 },
-      { x: 350, y: 470 }, { x: 380, y: 490 }, { x: 410, y: 510 },
-      { x: 480, y: 470 }, { x: 510, y: 490 }, { x: 530, y: 510 },
-      { x: 580, y: 650 }, { x: 610, y: 670 }, { x: 640, y: 690 },
-      { x: 860, y: 840 }, { x: 880, y: 860 }
-    ];
-    dirtCoords.forEach((pt, i) => {
-      list.push({
-        id: `DIRT_${i}`,
-        x: pt.x,
-        y: pt.y,
-        radius: 12,
-        cleaned: false
-      });
-    });
-    return list;
+    return dirtSeeds.map(([x,y],i)=>({id:`DIRT_${i}`,x,y,radius:12,cleaned:false}))
+      .filter(cell=>!['DIRT_0','DIRT_8','DIRT_15'].includes(cell.id)&&isRetainedPoint(cell.x,cell.y));
   }
 
   generateWetCells() {
     return [
-      { id: 'WET_1', x: 300, y: 740, radius: 24, cleaned: false, inKitchen: true },
-      { id: 'WET_2', x: 330, y: 770, radius: 20, cleaned: false, inKitchen: true },
+      { id: 'WET_1', x: 350, y: 900, radius: 24, cleaned: false, inKitchen: true },
+      { id: 'WET_2', x: 520, y: 900, radius: 20, cleaned: false, inDining: true },
       { id: 'WET_3', x: 920, y: 520, radius: 22, cleaned: false, inBathroom: true }
     ];
   }

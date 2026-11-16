@@ -111,5 +111,5 @@ function mergeSegments(rows) {
   return other;
 }
 const data = {sourceSha256:crypto.createHash('sha256').update(bytes).digest('hex'),furniture,floors:unique(floors),walls:mergeSegments(unique(walls)),boundaries:mergeSegments(unique(boundaries))};
-fs.writeFileSync(new URL('../js/sim/apartment-collision-data.js', import.meta.url), '// Generated from assets/Apartment.glb by scripts/extract-apartment-collision.mjs.\nexport const apartmentCollision = '+JSON.stringify(data)+';\n');
+fs.writeFileSync(new URL('../js/sim/apartment-collision-data.js', import.meta.url), '// Generated from assets/Apartment.glb by scripts/extract-apartment-collision.mjs.\nimport { compactCollision } from \'./apartment-layout.js\';\nexport const rawApartmentCollision = '+JSON.stringify(data)+';\nexport const apartmentCollision = compactCollision(rawApartmentCollision);\n');
 console.log({floors:data.floors.length,walls:data.walls.length,boundaries:data.boundaries.length});

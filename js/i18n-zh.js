@@ -34,6 +34,11 @@ Choose a task priority for each current task to continue.	为每项当前任务�
 Set your robot priorities	设置机器人的优先事项
 Give your robot senses	为机器人配置 Sensors
 Give your robot a body	为机器人配置 Actuators
+Current task requirements	当前任务要求
+Add one here	在此安装一个部件
+Reports the distance to an obstacle directly ahead, without identifying the obstacle.	测量正前方障碍物的距离，无法识别它是什么。
+Shows the floor layout and visited areas. Records dirt and spills only after detection by mounted local sensors (Floor Dirt Sensor and Floor Wet Sensor).	显示地板布局和走过的区域。只有已安装的 Floor Dirt Sensor 或 Floor Wet Sensor 检测到脏污或液体后，才会记录这些信息。
+Reports the type and location of tagged cups, food, and trash in its forward view. It does not detect the cat, floor dirt, or spills.	识别前方视野中有标签的杯子、食物和垃圾，报告类型与位置。无法检测猫、地面脏污或液体。
 Walk the apartment. Then mount the sensors your robot needs.	先在公寓中走一走，再安装机器人需要的 Sensors。
 Mount the parts your robot needs for the current tasks.	安装机器人完成当前任务所需的部件。
 Robot sensor silhouette	机器人 Sensors 安装示意
@@ -324,8 +329,11 @@ for (const [source, chinese] of Object.entries(ZH)) {
 }
 
 Object.assign(ZH, {
+  '0. Overview':'0. 任务总览',
+  'Workstation steps':'工作台步骤',
+  'Collapse Workstation (Esc)':'收起工作台（Esc）',
   'Overview':'任务总览', 'PEASLab · Overview':'PEASLab · 任务总览','Your household robot challenge':'你的家用机器人挑战',
-  'One robot. Three growing missions.':'一个机器人，三个逐步增加的任务。',
+  'Instructions':'使用说明',
   'Design your own household robot from an empty body and program. Each mission adds a responsibility; keep and improve your earlier design.':'从空的机身和程序开始设计自己的家用机器人。每个阶段增加一项任务，请保留并改进之前的设计。',
   '1 · Vacuum the floor':'1 · 地面吸尘','2 · Add spill cleaning':'2 · 增加液体清洁','3 · Add pickup and sorting':'3 · 增加拾取和分类',
   'Find and remove dirt throughout the apartment.':'找到并清除公寓各处的灰尘。',
@@ -334,8 +342,8 @@ Object.assign(ZH, {
   'Common safety and charging':'共同要求：安全与充电',
   'In every mission, navigate furniture and doorways, stop for the moving cat, slow near people and resume afterwards, and return to connect at the dock when battery is low.':'每个任务都要安全绕过家具并通过门口，遇到移动的猫时停车，靠近人时减速、离开后恢复速度，并在电量低时返回充电座连接充电。',
   'Each fresh test starts at 35% battery. LOW means below 30%. Battery drains during work and charges only while physically connected. Your program must decide when to release the connector and continue.':'每次新测试从 35% 电量开始。LOW 表示低于 30%。工作会耗电，只有实际连接充电座后才会充电。你的程序需要决定何时断开连接并继续工作。',
-  'Your five PEAS steps':'五个 PEAS 设计步骤',
-  'Purpose → Sensors → Actuators → Logic → Test & debug. Revisit any unlocked step to improve your design.':'Purpose → Sensors → Actuators → Logic → Test & debug。可以返回任何已解锁的步骤改进设计。',
+  'Your six PEAS steps':'六个 PEAS 设计步骤',
+  'Purpose → Environment → Sensors → Actuators → Logic → Test & debug. Revisit any unlocked step to improve your design.':'Purpose → Environment → Sensors → Actuators → Logic → Test & debug。可以返回任何已解锁的步骤改进设计。',
   'Sensor budgets grow from 7 to 8 to 11; there are 10 actuator positions. These are provisional pilot settings, not recommendations.':'传感器数量上限依次为 7、8、11；执行器有 10 个安装位。这些是试点的暂定设置，不是推荐配置。',
   'Advance after a formal run meets every current criterion. Final success means all three tasks and common safety and charging succeed in the same run.':'一次正式运行满足当前全部标准后才能进入下一阶段。最终达标需要在同一次运行中完成三个任务和共同的安全、充电要求。',
   'Hardware, programs, purpose edits, observations and results carry forward. Overview can be revisited without losing your work.':'硬件、程序、目标修改、观察记录和结果都会保留。返回总览不会丢失当前工作。',
@@ -359,4 +367,186 @@ Object.assign(ZH, {
 Object.assign(ZH, {
   'Programs remain available as you add missions. Disconnected blocks and future-mission behaviors do not execute.':'增加任务时保留已有程序。未连接的积木和未来任务的行为暂不执行。',
   'Program exceeds the supported 512 nodes or 32 nesting levels. Simplify it before running.':'程序超过 512 个节点或 32 层嵌套的支持上限。请简化后再运行。'
+});
+Object.assign(ZH, {
+  'Choose a cleaning goal. Keep your design and add to it as new tasks are introduced.':'选择一个清洁目标。加入新任务时，请保留并继续改进已有设计。',
+  'Cleaning goal':'清洁目标',
+  'Quick cleaning':'快速清洁',
+  '100% of cleanable floor area':'100% 的可清洁地面面积',
+  'At least 60% of cleanable floor area':'至少 60% 的可清洁地面面积',
+  'Choose a cleaning goal to continue.':'选择一个清洁目标后继续。',
+  'Choose the remaining task priorities to continue.':'完成其余任务的优先级选择后继续。'
+});
+Object.assign(ZH, {
+  'Set performance measurement':'设置评价标准',
+  'Understand the task, then choose how your robot should clean.':'先了解任务，再选择机器人的清洁方式。',
+  'To complete this task, your robot must also:':'完成这项任务时，机器人还必须：',
+  'Stop for the cat and continue when it moves away.':'遇到猫时停车，猫离开后继续运行。',
+  'Slow down near a person and resume normal speed after passing.':'靠近人时减速，通过后恢复正常速度。',
+  'Return to the dock when battery is low, connect to charge, then continue cleaning.':'电量低时返回充电座，连接充电，再继续清洁。',
+  'Move safely around furniture and through doorways. These requirements apply to all three tasks.':'安全绕过家具并通过门口。这些要求适用于三个任务。'
+});
+Object.assign(ZH, {
+  'Cleaning results':'清洁结果',
+  'Floor cleaning coverage':'地面清洁覆盖率',
+  'Dirt spots removed':'已清除灰尘点',
+  'Of cleanable floor area':'占可清洁地面面积的比例',
+  'Test results show floor cleaning coverage and dirt spots removed separately.':'Test 结果会分别显示地面清洁覆盖率和灰尘点清除情况。'
+});
+Object.assign(ZH, {
+  'Observe the environment':'观察 Environment',
+  'Look around the apartment and confirm what you have noticed before choosing Sensors.':'先观察整个公寓，确认环境里有哪些东西，再选择 Sensors。',
+  'View whole apartment':'查看整个公寓',
+  'Continue to Sensors':'继续选择 Sensors',
+  'Environment observations':'环境观察清单',
+  'Edit Environment':'查看 Environment',
+  'Open Step 6 Lab ↗':'打开第 6 步工作台 ↗',
+  'Dirt':'灰尘', 'Spills':'水渍', 'Spill':'水渍', 'Objects':'地面物品',
+  'Paper':'纸', 'Can':'易拉罐', 'Mug':'杯子', 'Food bowl':'食物碗',
+  'Charging dock':'充电座', 'Cat':'猫', 'Person':'人',
+  'Dry dirt and crumbs are spread across the apartment floor.':'公寓各处的地板上散落着灰尘和碎屑。',
+  'Notice where liquid has spilled onto the floor.':'观察地板上哪些地方有洒出的液体。',
+  'Look for paper, cans, mugs and food bowls.':'找到纸、易拉罐、杯子和食物碗。',
+  'Find where the robot can return to charge.':'找到机器人返回充电的位置。',
+  'The cat moves through the apartment.':'猫会在公寓里走动。',
+  'A person may be near the robot as it moves.':'机器人移动时，旁边可能有人。'
+});
+Object.assign(ZH, {
+  'About 40 simulation minutes':'约 40 分钟（模拟时间）',
+  'About 20 simulation minutes':'约 20 分钟（模拟时间）',
+  'Walk around in FPS 360°':'在 FPS 360° 中走动观察',
+  'Walk around in FPS 360° and approach every labelled location. Labels turn green after observation.':'在 FPS 360° 中走近每一处带标签的位置。观察后，标签会变为绿色。',
+  'You are the person in this environment.':'你就是环境中的人。',
+  'Observed':'已观察',
+  'Not observed':'尚未观察'
+});
+Object.assign(ZH, {
+  'Third person':'第三人称',
+  'Third-person player view':'第三人称玩家视角',
+  'View yourself in Third person':'用第三人称查看自己',
+  'Use Third person to see the person you control.':'切换到第三人称，查看你操控的人物。',
+  'Look for paper, cans and mugs.':'找到纸、易拉罐和杯子。',
+  'Walk around in FPS 360° or Third person and approach every labelled location. Labels turn green after observation.':'在 FPS 360° 或第三人称中走近每一处带标签的位置。观察后，标签会变为绿色。'
+});
+Object.assign(ZH, {
+  '✕ Close workstation [Esc]':'✕ 关闭 Workstation [Esc]',
+  'Environment views':'环境观察视角',
+  'Whole apartment':'整个公寓',
+  'Environment observation progress':'环境观察进度',
+  'Observation done':'观察完成'
+});
+
+Object.assign(ZH, { 'Scroll to first step':'滚动到第一个步骤', 'Scroll to last step':'滚动到最后一个步骤' });
+Object.assign(ZH, {
+  'Sensor library':'Sensor library',
+  'Click a Sensor to install it. Click it again to remove it.':'点击 Sensor 即可安装，再次点击可移除。',
+  'Robot preview':'机器人预览',
+  'Robot sensor preview':'机器人 Sensor 预览',
+  'Sensor slots':'Sensor 槽位',
+  'Empty sensor slot':'空 Sensor 槽位',
+  'Installed Sensors':'已安装的 Sensors',
+  'No Sensors installed yet.':'尚未安装 Sensors。'
+});
+
+Object.assign(ZH, {
+  'Actuator library':'Actuator library',
+  'Click an Actuator to install it. Click it again to remove it.':'点击 Actuator 即可安装，再次点击可移除。',
+  'Robot actuator preview':'机器人 Actuator 预览',
+  'Actuator slots':'Actuator 槽位',
+  'Empty actuator slot':'空 Actuator 槽位',
+  'Installed Actuators':'已安装的 Actuators',
+  'No Actuators installed yet.':'尚未安装 Actuators。'
+});
+
+Object.assign(ZH, { 'Expand Logic canvas':'放大 Logic 画布', 'Return to workstation':'返回 Workstation', 'Decision Logic canvas':'Decision Logic 画布' });
+
+Object.assign(ZH, {
+  'Navigation & common behaviors':'行驶路线与通用行为',
+  'Vacuum and mop':'吸尘与拖地',
+  'Pick up and sort':'拾取与分类',
+  'Driving route':'行驶路线',
+  'Animal response':'应对动物',
+  'Human response':'应对人',
+  'Charging and resume':'充电与继续',
+  'Complete safe patrol':'完成安全巡航',
+  'Complete efficient patrol':'完成高效巡航',
+  'Task goal':'任务目标',
+  'Common behaviors in every task':'每个任务都保留的通用行为',
+  'Build one robot across three tasks. Keep your hardware and program, then add the next capability.':'用同一个机器人完成三个任务。保留已有硬件和程序，再增加下一项能力。',
+  '1 · Navigation & common behaviors':'1 · 行驶路线与通用行为',
+  '2 · Vacuum and mop':'2 · 吸尘与拖地',
+  '3 · Pick up and sort':'3 · 拾取与分类',
+  'Write the driving route, obstacle responses, animal and human safety, and charging rules.':'编写行驶路线、避障、动物和人的安全应对，以及充电规则。',
+  'Keep navigation. Add suction and mop control, choose Quick or Thorough coverage, and keep suction off water.':'保留导航程序，增加吸尘与拖地控制，选择快速或彻底清洁目标，避免吸尘接触水渍。',
+  'Keep earlier behaviors. Add object identification, pickup, delivery and release.':'保留已有行为，增加物品识别、拾取、运送和放下。',
+  'Choose the result you want. Your own program must implement it; selecting a goal does not change the route automatically.':'选择希望达到的结果，再用自己的程序实现。选择目标不会自动改变路线。',
+  'Write how to move around furniture and through doorways.':'编写如何绕过家具、通过门洞。',
+  'Define how to respond to the cat.':'设定如何应对猫。',
+  'Define when to slow near a person and restore speed.':'设定何时靠近人减速，以及何时恢复速度。',
+  'Define when to return, connect, recharge and resume.':'设定何时返回、连接充电，以及何时继续工作。',
+  'Each spill is clean after actual mop contact. No repeated wiping or cleaning-degree setting is required. Never vacuum water.':'拖布实际接触一滩水后，该水渍即为干净。不要求反复擦拭或清洁程度，不能用吸尘器吸水。',
+  'Trash belongs in the bin; belongings go to the designated table. Confirm pickup and release.':'垃圾送到垃圾桶，需归位的物品送到指定桌面；检查是否抓住及放下物品。',
+  'Choose each current task goal to continue.':'选择当前各项任务的目标后继续。',
+  'Fill the empty IF conditions and actions in the starter Behaviors. Change priorities, add branches or create your own Behaviors.':'在基础框架中填入 IF 条件和动作。你可以修改优先级、添加分支，或创建自己的 Behavior。',
+  'You choose directions, distances, safety thresholds and charging rules. Higher priorities win conflicting commands; movement and cleaning tools can run together.':'方向、距离、安全阈值和充电规则由你设定。冲突动作优先执行较高优先级；移动和清洁工具可以同时工作。',
+  'Map, traveled path and cleaning progress are recorded automatically. No program means no movement. UNKNOWN inputs never enter ELSE.':'地图、已走路径和清洁进度自动记录。没有程序就不会移动；UNKNOWN 输入不会进入 ELSE。',
+  'Your program carries forward. Empty or disconnected blocks do not run; no automatic navigation or answers are added.':'程序会保留到下个任务。空白或未连接的积木不执行，系统不自动添加导航或答案。',
+  'Fresh runs start at 35% battery. Set your own response thresholds in Logic. Every current task and common behavior must succeed in the same run.':'每次新运行从 35% 电量开始。在 Logic 中设定应对阈值。当前任务及通用行为需要在同次运行中达标。',
+  'Recorded results':'记录结果',
+  'Patrol coverage':'巡航覆盖率',
+  'Actual floor visited':'实际访问过的地面',
+  'Visit all reachable floor area':'访问全部可达地面',
+  'Continue learner-authored navigation':'继续执行自己编写的导航',
+  'Mop every spill once; keep suction off liquid':'每滩水拖过一次，保持吸尘关闭',
+  'Place all required objects at their correct destinations':'将所有要求处理的物品送到正确目的地',
+  'Respond safely in every moving cat encounter':'移动遇猫时均安全应对',
+  'Slow near people and restore speed after passing':'靠近人减速，通过后恢复速度',
+  'Return on low battery, connect, recharge and resume':'低电量返航，连接充电后继续工作',
+  'Visit the reachable apartment, decide how to move around obstacles, respond safely to animals and people, and return to charge.':'巡航可达房间，决定如何绕障、安全应对动物和人，并返回充电。',
+  'Vacuum the floor and mop spills. Keep suction off water. Choose the floor cleaning coverage goal.':'吸尘并拖干水渍，避免用吸尘器吸水，选择地面清洁覆盖目标。',
+  'Pick up scattered objects and place each at its correct destination.':'捡起散落物品，并送到各自正确的目的地。',
+  'Define your animal response and when movement can continue.':'设定动物应对方式，以及何时继续移动。',
+  'Define when to slow down near a person and restore speed.':'设定靠近人时的减速与恢复速度条件。',
+  'Define low battery, return to the dock, connect, and resume after charging.':'设定低电量条件，返回充电座、连接并在充电后继续。',
+  'Provides position, heading and an automatically recorded local map. Unknown areas remain unknown; it never chooses a route.':'提供位置、朝向和自动记录的局部地图。未观察的区域保留为未知，不会自动选择路线。',
+  'Measures obstacle distance in front, back, left and right. It does not identify the obstacle.':'测量前、后、左、右的障碍距离，不识别障碍类型。',
+  'Position, heading and automatically recorded local map observations. Unseen cells remain UNKNOWN.':'位置、朝向和自动记录的局部地图，未观察的位置保留为 UNKNOWN。'
+});
+Object.assign(ZH,{
+'Distance and direction to the tagged cat, with DETECTED / CLEAR status. Choose your own response threshold in Logic.':'测量猫的距离和方向，并提供 DETECTED / CLEAR 状态。在 Logic 中自行设定应对阈值。',
+'Distance and direction to the tagged cat, with DETECTED / CLEAR status.':'测量猫的距离和方向，并提供 DETECTED / CLEAR 状态。',
+'Battery level as a percentage. Choose low and resume thresholds in Logic.':'输出电量百分比。在 Logic 中自行设定低电量和继续工作的阈值。',
+'Battery level as a percentage.':'输出电量百分比。',
+'Obstacle distance in meters in front, back, left and right. Does not decide which way to turn.':'测量前、后、左、右的障碍距离，单位为米，不会自动决定转向。',
+'Obstacle distance in meters in front, back, left and right.':'测量前、后、左、右的障碍距离，单位为米。',
+'Position, heading and automatically recorded local map observations.':'提供位置、朝向和自动记录的局部地图。',
+'Navigation':'行驶路线',
+'Write movement, obstacle, animal, human and charging rules. Sensors record observations automatically; the robot follows only your program.':'编写移动、避障、动物、行人和充电规则。感知信息自动记录，机器人只执行你编写的程序。',
+'Patrol reachable floor and demonstrate common safety and charging behavior.':'巡航可达地面，并完成通用安全和充电行为。',
+'Keep your navigation program. Add suction on dry floor and mop contact on spills; choose Quick or Thorough floor coverage.':'保留导航程序，在干地面吸尘、在水渍处拖地，选择快速或彻底清洁覆盖目标。',
+'Meet actual floor coverage, mop each spill once and never vacuum water.':'达到实际地面覆盖目标，每滩水拖过一次，避免吸尘接触水。',
+'Keep navigation and cleaning. Identify and pick up objects, choose their destination, carry, release and retract the arm.':'保留导航和清洁程序。识别并拾取物品，选择目的地，运送、放下并收回机械臂。',
+'All required objects reach their correct destinations.':'所有要求处理的物品送到正确目的地。'
+});
+
+Object.assign(ZH,{
+'Removes dry dirt under the robot while suction is on.':'开启吸尘时清除机器人下方的干灰尘。',
+'Lowers an absorbent pad; one contact with a spill cleans it.':'放下吸水拖布，接触水渍一次即可清理干净。',
+'Cannot remove dry dust; keep vacuum suction off when contacting water.':'不能清除干灰尘；接触水时应关闭吸尘。'
+});
+
+Object.assign(ZH,{
+'Performance measurement':'Performance measurement',
+'Speed':'速度优先',
+'100% of reachable floor area':'100% 的可达地面面积',
+'At least 60% of reachable floor area':'至少 60% 的可达地面面积',
+'Choose a performance measurement to continue.':'选择 Performance measurement 后继续。',
+'Walk around in FPS 360°, 3D 360° or Third person and approach every labelled location. Labels turn green after observation.':'在 FPS 360°、3D 360° 或 Third person 下移动，靠近每个带标记的位置。观察后标记变为绿色。',
+'Visit at least 60% of reachable floor area':'访问至少 60% 的可达地面面积'
+});
+
+Object.assign(ZH,{
+'Task 1 requires visiting 100% of reachable floor area in either mode. The cleaning targets below apply from Task 2.':'无论选择哪种模式，Task 1 都需要巡航 100% 的可达地面。下面的清洁目标从 Task 2 开始使用。',
+'Task 1 reference: 100% patrol of the current apartment. Every block is editable.':'Task 1 参考答案：巡航当前公寓全部可达区域。所有积木均可编辑。',
+'Decision Logic · Task 1 reference (100% patrol)':'Decision Logic · Task 1 参考答案（100% 巡航）'
 });

@@ -1,0 +1,17 @@
+import assert from 'node:assert/strict';
+const {chromium}=await import('/Users/jovirosi/.cache/codex-runtimes/codex-primary-runtime/dependencies/node/node_modules/playwright/index.mjs');
+const browser=await chromium.launch({executablePath:'/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',headless:true});
+const base=process.env.TEST_URL||'http://localhost:8093';
+const sensors=['SENSE_07','SENSE_04','SENSE_01','SENSE_09','SENSE_02','SENSE_03'];
+const actuators=['ACTUATOR_WHEELS','ACTUATOR_ROTATION','ACTUATOR_ESTOP','ACTUATOR_DOCK_PIN'];
+const errors=[];
+try{
+ const page=await browser.newPage({viewport:{width:1512,height:1000}});page.on('pageerror',e=>errors.push(e.message));await page.goto(base+'/?preview=logic');await page.waitForSelector('.logic-board-toggle');
+ const snapshot=()=>page.evaluate(async()=>{const s=(await import('/js/state.js')).appState;return{preview:s.localPreview,stage:s.currentStage,step:s.currentStep,sensors:[...s.installedSensors],actuators:[...s.installedActuators],observations:s.observedEnvironmentTargets.size,goal:s.stagePurposes[1].TASK_1.priority,program:s.program,flag:s.getConfiguration().localPreview};});
+ let s=await snapshot();assert.equal(s.preview,true);assert.equal(s.flag,true);assert.equal(s.stage,1);assert.equal(s.step,5);assert.deepEqual(s.sensors,sensors);assert.deepEqual(s.actuators,actuators);assert.equal(s.observations,0);assert.equal(s.goal,'thorough');assert.deepEqual(s.program,[]);assert.equal(await page.evaluate(()=>robotBlockWorkspace.getAllBlocks().length),8);
+ await page.evaluate(()=>openStepModal(3));assert.equal(await page.locator('#sensorAssemblyPreview [data-attached-sensor]').count(),6);await page.evaluate(()=>openStepModal(4));assert.equal(await page.locator('#sensorAssemblyPreview [data-attached-actuator]').count(),4);await page.locator('.actuator-editor .mounting-continue').click();assert.equal((await snapshot()).step,5);
+ await page.locator('.logic-board-toggle').click();assert.equal(await page.locator('#logicBoardDialog').evaluate(el=>el.open),true);await page.keyboard.press('Escape');assert.equal((await snapshot()).step,5);assert.deepEqual((await snapshot()).sensors,sensors);
+ await page.reload();await page.waitForSelector('.logic-board-toggle');assert.equal((await snapshot()).step,5);assert.deepEqual((await snapshot()).actuators,actuators);
+ const normal=await browser.newPage();normal.on('pageerror',e=>errors.push(e.message));await normal.goto(base+'/');await normal.waitForSelector('#beginDesign');const initial=await normal.evaluate(async()=>{const s=(await import('/js/state.js')).appState;return{preview:s.localPreview,step:s.currentStep,sensors:[...s.installedSensors],actuators:[...s.installedActuators],program:s.program,observations:s.observedEnvironmentTargets.size,goal:s.stagePurposes[1].TASK_1.priority};});assert.deepEqual(initial,{preview:false,step:1,sensors:[],actuators:[],program:[],observations:0,goal:null});assert.equal(await normal.locator('#dashboardSteps [data-step="5"]').isDisabled(),true);
+ assert.deepEqual(errors,[]);console.log(JSON.stringify({pass:true,directDecisionLogic:true,taskOneSixSensorsFourActuators:true,logicHasEmptyStructure:true,refreshKeepsTemporaryEntry:true,hardwareReview:true,expandedCanvasWorks:true,noFalseObservations:true,normalEntryStartsAtOverviewAndStepOne:true,normalHardwareEmpty:true,errors}));
+}finally{await browser.close();}

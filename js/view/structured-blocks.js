@@ -1,3 +1,5 @@
+import {learnerDefinitions,learnerToolbox} from './learner-blocks.js';
+import {compileLearnerWorkspace} from './learner-compiler.js';
 import { appState } from '../state.js';
 import { SENSE_BLOCKS, CONDITION_BLOCKS, ACTION_BLOCKS, CONTROL_BLOCKS, DEFAULT_RULE_TEMPLATES } from '../data/blocks.js';
 export function defineBlocks(B) {
@@ -5,6 +7,7 @@ export function defineBlocks(B) {
   const tasks=()=>DEFAULT_RULE_TEMPLATES.map(t=>[`${!appState.selectedTasks.includes(t.taskId)?'Future mission: ':['TASK_4','TASK_5','TASK_6'].includes(t.taskId)?'Common: ':''}${t.taskName}`,t.taskId]);
   const header=(type,name,priority)=>({type,message0:`${name} %1 priority %2`,args0:[{type:'field_dropdown',name:'TASK',options:tasks},{type:'field_number',name:'PRIORITY',value:priority,min:1,max:100,precision:1}],message1:'DO %1',args1:[{type:'input_statement',name:'BODY'}],colour:265,tooltip:'Execution priority is separate from nesting. Higher numbers run first; a waiting behavior holds its priority.'});
   B.common.defineBlocksWithJsonArray([
+    ...learnerDefinitions(),
     header('PEAS_BEHAVIOR','BEHAVIOR',1),header('CTRL_05','PRIORITY: HIGH',10),header('CTRL_06','PRIORITY: NORMAL',1),
     ...SENSE_BLOCKS.map(b=>({type:b.id,message0:b.name,output:'Sensor',colour:205,tooltip:b.desc})),
     ...CONDITION_BLOCKS.map(b=>({type:b.id,message0:`${b.name} %1`,args0:[{type:'input_value',name:'SENSOR',check:'Sensor'}],output:'Boolean',colour:45,tooltip:`${b.desc} Compatible: ${b.requiresSense.join(', ')}`})),
@@ -15,12 +18,10 @@ export function defineBlocks(B) {
     {type:'WAIT_UNTIL',message0:'WAIT UNTIL %1',args0:[{type:'input_value',name:'CONDITION',check:'Boolean'}],previousStatement:null,nextStatement:null,colour:265}
   ]);
 }
-export function toolbox() {
-  const category=(name,colour,types)=>({kind:'category',name,colour,contents:types.map(type=>({kind:'block',type}))});
-  return {kind:'categoryToolbox',contents:[category('Behavior',265,['PEAS_BEHAVIOR']),category('Sense',205,SENSE_BLOCKS.map(b=>b.id)),category('Condition',45,[...CONDITION_BLOCKS.map(b=>b.id),'logic_operation']),category('Action',155,ACTION_BLOCKS.map(b=>b.id)),category('Control',265,['controls_if',...CONTROL_BLOCKS.map(b=>b.id),'WAIT_UNTIL'])]};
-}
+export function toolbox() { return learnerToolbox(); }
 /** Compile only connected trees. Incomplete drafts stay in workspace, never execute an older hidden tree. */
 export function compileWorkspace(workspace) {
+  if(workspace.getTopBlocks(true).some(b=>['LEARNER_BEHAVIOR','LEARNER_DEFINE'].includes(b.type)))return compileLearnerWorkspace(workspace);
   const errors=[];
   const expr=b=>{
     if(!b)throw new Error('Connect a condition and its sensor.');

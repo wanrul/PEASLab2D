@@ -18,7 +18,7 @@ test('map shortcuts cannot move the player or open a workstation during robot PO
   t.after(() => { globalThis.window = oldWindow; globalThis.document = oldDocument; });
   const renderer = Object.create(HouseCanvasRenderer.prototype);
   renderer.canvas = { addEventListener() {} };
-  renderer.activeStationPrompt = { step: 2 };
+  renderer.activeStationPrompt = { step: 3 };
   renderer.keys = { w: false };
   renderer.headingAngle = 0;
   renderer.initControls();
@@ -45,10 +45,10 @@ test('robot camera follows position and heading rather than the player avatar', 
   assert.equal(pose.target.z, 3);
 });
 
-for (const mode of ['2d', '3d', 'fps']) {
+for (const mode of ['2d', '3d', 'fps', 'thirdPerson']) {
   test(`exiting robot POV restores the original ${mode} page and camera`, () => {
     appState.isRobotPovActive = false;
-    let page = { mode, step: 2, modalOpen: true, scrollTop: 140 };
+    let page = { mode, step: 3, modalOpen: true, scrollTop: 140 };
     let camera = { position: [4, 14, 18], viewMode: mode };
     const originalPage = structuredClone(page);
     const originalCamera = structuredClone(camera);

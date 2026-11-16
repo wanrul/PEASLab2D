@@ -25,39 +25,39 @@ try {
     window.testLog=(await import('/js/logging/session-log.js')).sessionLogger;
     window.openStepModal(1);
   });
-  const snapshot=()=>page.evaluate(()=>JSON.stringify({purposes:testState.stagePurposes,rules:testState.rules,revision:testState.rulesRevision,events:testState.eventOrder,history:testState.runHistory,logs:testState.observationLogs}));
+  const snapshot=()=>page.evaluate(()=>JSON.stringify({purposes:testState.stagePurposes,observedEnvironment:[...testState.observedEnvironment],observedEnvironmentTargets:[...testState.observedEnvironmentTargets],rules:testState.rules,revision:testState.rulesRevision,events:testState.eventOrder,history:testState.runHistory,logs:testState.observationLogs}));
   const toggle=async lang=>{ await page.locator(`[data-language="${lang}"]`).click(); await page.waitForFunction(lang=>document.documentElement.lang===lang,lang); };
   const before=await snapshot();
-  await page.evaluate(()=>window.purposeNode=document.querySelector('[data-task-purpose]'));
+  assert.equal(await page.locator('[data-task-purpose]').count(),0,'Purpose has no editable task-description fields');
+  const factoryDescription=await page.locator('[data-task-description="TASK_1"]').innerText();
+  await page.evaluate(()=>window.purposeNode=document.querySelector('[data-task-description="TASK_1"]'));
+  assert.equal(await page.evaluate(()=>purposeNode.tagName),'P');
   await toggle('zh-CN');
-  assert.match(await page.locator('[data-task-purpose]').inputValue(),/[\u3400-\u9fff]/);
+  assert.match(await page.locator('[data-task-description="TASK_1"]').innerText(),/[\u3400-\u9fff]/);
   assert.equal(await snapshot(),before);
   await toggle('en');
+  assert.equal(await page.locator('[data-task-description="TASK_1"]').innerText(),factoryDescription);
   assert.equal(await snapshot(),before);
-  assert.equal(await page.evaluate(()=>purposeNode===document.querySelector('[data-task-purpose]')),true);
-  // A dictionary phrase entered by a learner is never translated, even on blur.
-  await page.locator('[data-task-purpose]').fill('Continue');
-  await page.locator('[data-task-purpose]').blur();
-  await toggle('zh-CN'); assert.equal(await page.locator('[data-task-purpose]').inputValue(),'Continue');
-  await toggle('en');
-  // Preserve an uncommitted focused draft and selection without firing change.
-  await page.locator('[data-task-purpose]').fill('uncommitted Run draft');
-  await page.evaluate(()=>{const n=purposeNode;n.focus();n.setSelectionRange(2,8);});
-  const draftBefore=await snapshot();
+  assert.equal(await page.evaluate(()=>purposeNode===document.querySelector('[data-task-description="TASK_1"]')),true);
+  // Preserve a pre-existing literal purpose through the state API; the UI is read-only.
+  await page.evaluate(()=>{testState.setTaskPurpose('TASK_1','Continue');window.openStepModal(1);});
+  const literalBefore=await snapshot();
   await toggle('zh-CN');
-  assert.deepEqual(await page.evaluate(()=>[purposeNode.value,purposeNode.selectionStart,purposeNode.selectionEnd,document.activeElement===purposeNode]),['uncommitted Run draft',2,8,true]);
-  assert.equal(await snapshot(),draftBefore);
+  assert.equal(await page.locator('[data-task-description="TASK_1"]').innerText(),'Continue');
+  assert.equal(await snapshot(),literalBefore);
   await toggle('en');
+  assert.equal(await page.locator('[data-task-description="TASK_1"]').innerText(),'Continue');
+  assert.equal(await snapshot(),literalBefore);
   // Mounting selection, element identity and independent library scroll survive.
-  await page.evaluate(()=>{testState.setTaskPriority('TASK_1','thorough');window.openStepModal(2);});
+  await page.evaluate(async()=>{testState.setTaskPriority('TASK_1','thorough');window.openStepModal(2);const {observeAllEnvironmentForTest}=await import('/tests/fixtures/structured-solution.mjs');observeAllEnvironmentForTest(testState,simEngine.world);window.openStepModal(3);});
   await page.locator('.module-card').first().click();
-  await page.evaluate(()=>{window.selectedCard=document.querySelector('.module-card.selected');window.library=document.querySelector('.mounting-library');library.scrollTop=200;window.savedScroll=library.scrollTop;});
+  await page.evaluate(()=>{window.selectedCard=document.querySelector('.module-card[aria-pressed="true"]');window.library=document.querySelector('.mounting-library');library.scrollTop=200;window.savedScroll=library.scrollTop;});
   await toggle('zh-CN');
-  assert.deepEqual(await page.evaluate(()=>[selectedCard===document.querySelector('.module-card.selected'),library===document.querySelector('.mounting-library'),library.scrollTop===savedScroll]),[true,true,true]);
+  assert.deepEqual(await page.evaluate(()=>[selectedCard===document.querySelector('.module-card[aria-pressed="true"]'),library===document.querySelector('.mounting-library'),library.scrollTop===savedScroll]),[true,true,true]);
   assert.match(await page.locator('.module-card span:last-child').first().innerText(),/[\u3400-\u9fff]/);
   await page.screenshot({animations:'disabled',path:join(artifacts,'zh-sensors.png')});
   await toggle('en');
-  await page.evaluate(()=>{testState.toggleSensor('SENSE_05');testState.toggleActuator('ACTUATOR_VACUUM');testState.unlockedStep=4;window.openStepModal(4);});
+  await page.evaluate(()=>{testState.toggleSensor('SENSE_05');testState.toggleActuator('ACTUATOR_VACUUM');testState.unlockedStep=5;window.openStepModal(5);});
   await page.evaluate(()=>{window.savedWorkspace=robotBlockWorkspace;window.savedBlock=robotBlockWorkspace.newBlock('PEAS_BEHAVIOR');savedBlock.initSvg();savedBlock.render();savedBlock.moveBy(250,90);window.workspacePosition={x:robotBlockWorkspace.scrollX,y:robotBlockWorkspace.scrollY,scale:robotBlockWorkspace.scale};});
   await toggle('zh-CN');
   assert.equal(await page.evaluate(()=>savedWorkspace===robotBlockWorkspace&&savedBlock===robotBlockWorkspace.getBlockById(savedBlock.id)),true);
@@ -65,7 +65,7 @@ try {
   assert.match(await page.locator('.structured-editor header').innerText(),/[\u3400-\u9fff]/);
   console.log('Mounting and rule selection preserved; checking running simulation');
   // Real run remains active with the same run ID and advancing clock.
-  await page.evaluate(()=>{testState.setProgram([{id:'browser-behavior',type:'behavior',taskId:'TASK_1',priority:1,body:[{id:'browser-action',type:'action',command:'ACT_09'}]}]);testState.unlockedStep=5;window.openStepModal(5);window.simEngine.start();});
+  await page.evaluate(()=>{testState.setProgram([{id:'browser-behavior',type:'behavior',taskId:'TASK_1',priority:1,body:[{id:'browser-action',type:'action',command:'ACT_09'}]}]);testState.unlockedStep=6;window.openStepModal(6);window.simEngine.start();});
   await page.waitForTimeout(250);
   const runBefore=await page.evaluate(()=>({id:simEngine.runId,tick:simEngine.tickCount,starts:testLog.events?.filter(e=>e.event==='RUN_STARTED').length,ends:testState.runHistory.length}));
   await toggle('en'); await toggle('zh-CN'); await page.waitForTimeout(250);
@@ -88,7 +88,7 @@ try {
   await toggle('en'); await toggle('zh-CN');
   assert.equal(await page.evaluate(()=>robotIdentity===map3d.robotGroup && modelIdentity===map3d.apartmentModel && testState.isRobotPovActive),true);
   assert.match(await page.locator('.close-pov-btn').innerText(),/退出 Robot POV/);
-  await page.locator('.close-pov-btn').click();
+  await page.keyboard.press('Escape');
   console.log('Live feedback and POV preserved; checking all three stages');
   // Every cumulative stage, all criteria, defaults and both libraries render Chinese.
   await page.evaluate(async()=>{
@@ -96,24 +96,24 @@ try {
     window.testStages=PILOT_STAGES;
   });
   for(let stage=1;stage<=3;stage++) {
-    await page.evaluate(stage=>{testState.currentStage=stage;testState.selectedTasks=[...testStages[stage-1].taskIds];testState.stagePurposes[stage]=testState.createStagePurposes(stage);testState.stageResults[stage]={passingRunId:null,closingText:''};testState.unlockedStep=5;testState.currentStep=1;testState.notify('stageChanged',{stageId:stage});window.openStepModal();},stage);
+    await page.evaluate(stage=>{testState.currentStage=stage;testState.selectedTasks=[...testStages[stage-1].taskIds];testState.stagePurposes[stage]=testState.createStagePurposes(stage);testState.stageResults[stage]={passingRunId:null,closingText:''};testState.unlockedStep=6;testState.currentStep=1;testState.notify('stageChanged',{stageId:stage});window.openStepModal();},stage);
     assert.equal(await page.evaluate(()=>testState.currentStep),1);
     assert.equal(await page.evaluate(()=>testState.currentStage),stage);
-    assert.match(await page.locator('#stageProgress').innerText(),new RegExp(`阶段 ${stage}`));
+    assert.match(await page.locator('#stageProgress').innerText(),new RegExp(`任务 ${stage}`));
     assert.equal(await page.locator('#stepModalOverlay').isVisible(),true);
-    assert.equal(await page.locator('[data-task-purpose]').count(),stage);
-    for(const input of await page.locator('[data-task-purpose]').all()) {
-      // Stage 1's explicitly edited field stays literal even when the fixture reuses its factory phrase.
-      if(stage===1) assert.equal(await input.inputValue(),'Vacuum dirt from the apartment floor.');
-      else assert.match(await input.inputValue(),/[\u3400-\u9fff]/);
+    assert.equal(await page.locator('[data-task-description]').count(),stage);
+    assert.equal(await page.locator('[data-task-purpose]').count(),0);
+    for(const description of await page.locator('[data-task-description]').all()) {
+      assert.equal(await description.evaluate(n=>n.tagName),'P');
+      assert.match(await description.innerText(),/[\u3400-\u9fff]/);
     }
     assert.doesNotMatch(await page.locator('.stage-purposes').innerText(),/Success criterion|Clean at least|Correctly sort|Stop in every|Below \d+% battery/);
   }
   await page.screenshot({animations:'disabled',path:join(artifacts,'zh-stage-three.png')});
-  await page.evaluate(()=>window.openStepModal(3));
+  await page.evaluate(()=>window.openStepModal(4));
   assert.match(await page.locator('.module-card span:last-child').first().innerText(),/[\u3400-\u9fff]/);
   await page.screenshot({animations:'disabled',path:join(artifacts,'zh-actuators.png')});
-  await page.evaluate(()=>{window.openStepModal(5);simEngine.reset();simEngine.start();});
+  await page.evaluate(()=>{window.openStepModal(6);simEngine.reset();simEngine.start();});
   await page.waitForTimeout(350);
   await page.evaluate(()=>simEngine.endRun('evaluate'));
   await page.waitForSelector('#reflectionPanel');
@@ -136,7 +136,7 @@ try {
   // Persistence includes reload. A separate context blocks both storage operations.
   // Closing reflection and final summary keep user phrases literal.
   await page.setViewportSize({width:1440,height:1000});
-  await page.evaluate(()=>{testState.stagePurposes[1].TASK_1.purpose='Continue';window.openStepModal(5);});
+  await page.evaluate(()=>{testState.stagePurposes[1].TASK_1.purpose='Continue';window.openStepModal(6);});
   await page.locator('#finishSession').click();
   await page.locator('#closingReflection').fill('Give your robot senses');
   await toggle('en'); await toggle('zh-CN');

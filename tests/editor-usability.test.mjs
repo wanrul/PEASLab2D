@@ -11,12 +11,12 @@ test('priority weights use ten-percent increments, including initial values',()=
   state.setWeight('Coverage',104);assert.equal(state.weights.Coverage,100);
 });
 
-test('nested editor exposes the complete original library and structural blocks',async()=>{
+test('editor exposes four categories and student-authored primitive control tools',async()=>{
   const {toolbox}=await import('../js/view/structured-blocks.js');
-  const {ALL_BLOCKS}=await import('../js/data/blocks.js');
-  const box=toolbox();const types=box.contents.flatMap(c=>c.contents.map(b=>b.type));
-  for(const b of ALL_BLOCKS)assert.ok(types.includes(b.id),b.id);
-  for(const type of ['PEAS_BEHAVIOR','controls_if','logic_operation','WAIT_UNTIL'])assert.ok(types.includes(type));
+  const box=toolbox();assert.deepEqual(box.contents.map(c=>c.name),['Sense','Condition','Action','Control']);
+  const types=[];const visit=c=>{if(c.type)types.push(c.type);(c.contents||[]).forEach(visit);};visit(box);
+  for(const type of ['LEARNER_BEHAVIOR','controls_if','VALUE_COMPARE','READ_DISTANCE','ROBOT_MOVE','ROBOT_TURN','GET_LEARNER_VARIABLE','PROGRESS_VALUE','WAIT_UNTIL'])assert.ok(types.includes(type),type);
+  assert.ok(!types.some(t=>/AUTO_ROUTE|AUTO_AVOID|PLAN_NEXT/.test(t)));
 });
 test('rerendering an existing nested workspace preserves the live workspace instead of replacing its contents',()=>{
   const oldWindow=globalThis.window,oldFrame=globalThis.requestAnimationFrame;let resized=null;

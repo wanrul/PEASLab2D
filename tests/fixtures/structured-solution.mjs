@@ -1,4 +1,6 @@
 import { appState } from '../../js/state.js';
+import { ApartmentWorld } from '../../js/sim/world.js';
+import { getEnvironmentTargets } from '../../js/data/environment.js';
 let id=0;
 const n=(type,fields={})=>({id:`authored-${++id}`,type,...fields});
 const a=command=>n('action',{command});
@@ -16,4 +18,23 @@ export function authorStructuredSolution(stage){
   if(stage>=3)program.push(behavior('TASK_2',40,[iff(c('SENSE_02','COND_08'),[],[iff(c('SENSE_15','COND_16'),[a('ACT_24')],[iff(c('SENSE_15','COND_17'),[a('ACT_25')])]),iff(c('SENSE_08','COND_15'),[a('ACT_13'),a('ACT_14')],[iff(c('SENSE_03','COND_10'),[a('ACT_15')])])])]));
   if(!appState.setProgram(program))throw new Error('Invalid authored test program');
   return program;
+}
+
+// Focused non-walking tests still earn every real location through the proximity API.
+export function observeAllEnvironmentForTest(state,world=new ApartmentWorld()) {
+  state.configureEnvironment(world);
+  const pose={...world.avatar},step=state.currentStep,enabled=state.environmentWalkingEnabled;
+  state.currentStep=2;state.environmentWalkingEnabled=true;
+  try {
+    for(const target of getEnvironmentTargets(world)) {
+      if(target.id==='PERSON')continue;
+      Object.assign(world.avatar,{x:target.entity.x,y:target.entity.y});
+      state.observeEnvironment(world,'fps');
+    }
+    state.observeEnvironment(world,'thirdPerson');
+  } finally {
+    Object.assign(world.avatar,pose);state.currentStep=step;state.environmentWalkingEnabled=enabled;
+  }
+  if(!state.canContinue(2))throw new Error('Environment fixture did not observe every configured location');
+  return world;
 }

@@ -19,11 +19,11 @@ function rule(index,slots){Object.assign(appState.rules[index].slots,slots);}
 const body=()=>appState.installedActuators=new Set(['ACTUATOR_WHEELS','ACTUATOR_ROTATION']);
 const action=(engine,id)=>engine.executeAction({action:id,ruleIndex:0,trace:{action:id}});
 
-test('body explores without task rules and needs both locomotion modules even for MOVE',()=>{
+test('body stays still without task rules and needs both locomotion modules even for MOVE',()=>{
   for(const modules of [[],['ACTUATOR_WHEELS'],['ACTUATOR_ROTATION'],['ACTUATOR_WHEELS','ACTUATOR_ROTATION']]){
     const {world,engine,robot}=fixture();appState.installedActuators=new Set(modules);
     const before={x:robot.x,y:robot.y};engine.tick();
-    assert.equal(Math.hypot(robot.x-before.x,robot.y-before.y)>0,modules.length===2);
+    assert.equal(Math.hypot(robot.x-before.x,robot.y-before.y)>0,false);
     if(modules.length===1){action(engine,'ACT_01');assert.deepEqual({x:robot.x,y:robot.y},before);}
   }
 });
@@ -41,7 +41,7 @@ test('all catalog actions are gated and missing modules have an observable trace
 test('unmounted senses and built-in collision reflex never impersonate learner rules',()=>{
   const {world,engine,robot}=fixture();rule(0,{sense:'SENSE_05',condition:'COND_03',action:'ACT_09'});
   engine.tick();assert.match(engine.lastTrace.sense,/Floor Dirt Sensor.*not mounted/);
-  body();robot.heading=0;world.resolveMove=()=>({x:robot.x,y:robot.y,moved:false});engine.tick();assert.match(engine.lastTrace.act,/built-in reflex/);assert.equal(engine.activeRuleFired,null);
+  body();robot.heading=0;world.resolveMove=()=>({x:robot.x,y:robot.y,moved:false});engine.tick();action(engine,'ACT_01');assert.match(engine.lastTrace.act,/no automatic turn/);assert.equal(engine.activeRuleFired,null);
 });
 test('WAIT matures after20 ticks without re-starting; WHILE and UNTIL repeat only while condition holds',()=>{
   for(const control of ['CTRL_03','CTRL_01','CTRL_02']){
@@ -70,12 +70,12 @@ test('destination sensor reports only learner-selected goals and connector never
 test('released objects remain at drop point and only correct destinations count as sorted',()=>{
   const {world,engine,robot}=fixture();appState.installedActuators.add('ACTUATOR_GRIP_OPEN');const obj=world.objects[0];robot.heldObject=obj;obj.carried=true;
   Object.assign(robot,{x:world.depositTable.x,y:world.depositTable.y});action(engine,'ACT_15');assert.equal(obj.disposed,false);assert.equal(obj.x,robot.x);assert.equal(engine.wrongReleases,1);
-  robot.heldObject=obj;obj.carried=true;Object.assign(robot,{x:world.smartBin.x,y:world.smartBin.y});action(engine,'ACT_15');assert.equal(obj.sorted,true);assert.equal(world.smartBin.isOpen,true);engine.computeScores();assert.equal(engine.scores.coverage,8);
+  robot.heldObject=obj;obj.carried=true;Object.assign(robot,{x:world.smartBin.x,y:world.smartBin.y});action(engine,'ACT_15');assert.equal(obj.sorted,true);assert.equal(world.smartBin.isOpen,true);engine.computeScores();assert.equal(engine.scores.coverage,Math.round(30/world.objects.length));
 });
 test('safety penalties count moving encounters, not stationary ticks or continuous passes',()=>{
   const {world,engine,robot}=fixture();Object.assign(world.cat,{x:robot.x,y:robot.y});Object.assign(world.avatar,{x:robot.x,y:robot.y});
   for(let i=0;i<5;i++)engine.tick();assert.equal(engine.catSafetyViolations,0);assert.equal(engine.humanSafetyViolations,0);
-  body();for(let i=0;i<3;i++)engine.tick();assert.equal(engine.catSafetyViolations,1);assert.equal(engine.humanSafetyViolations,1);assert.equal(engine.scores.safety,87);
+  body();appState.installedSensors.add('SENSE_02');rule(0,{sense:'SENSE_02',action:'ACT_01'});for(let i=0;i<3;i++)engine.tick();assert.equal(engine.catSafetyViolations,1);assert.equal(engine.humanSafetyViolations,1);assert.equal(engine.scores.safety,87);
 });
 test('vacuum-on-spill is an encounter and continuous installed tools affect the world',()=>{
   const {world,engine,robot}=fixture();world.wetCells=[{id:'wet',x:robot.x,y:robot.y,radius:24,cleaned:false}];appState.installedActuators.add('ACTUATOR_VACUUM');action(engine,'ACT_09');
@@ -84,7 +84,7 @@ test('vacuum-on-spill is an encounter and continuous installed tools affect the 
 });
 test('only unlocked outcomes are live, non-vacuous, and included in end snapshot and CSV event',()=>{
   const {engine}=fixture();assert.deepEqual(engine.taskOutcomes.map(t=>t.status),['not_started']);
-  engine.start();engine.stop();engine.tick();const snapshot=engine.endRun();assert.equal(snapshot.outcomes.length,1);assert.deepEqual(snapshot.tasksCompleted,[]);assert.equal(snapshot.outcomes[0].summary,'Never vacuumed.');assert.equal(snapshot.durationMs,100);
+  engine.start();engine.stop();engine.tick();const snapshot=engine.endRun();assert.equal(snapshot.outcomes.length,1);assert.deepEqual(snapshot.tasksCompleted,[]);assert.match(snapshot.outcomes[0].summary,/Visited 0.0%/);assert.equal(snapshot.durationMs,100);
 });
 test('Time measures simulation ticks, ignores battery/speed/pause and decreases only overtime',()=>{
   const {engine,robot}=fixture({runLimitSeconds:2});engine.start();engine.stop();robot.battery=10;engine.setSpeed(5);for(let i=0;i<20;i++)engine.tick();assert.equal(engine.scores.time,100);engine.tick();assert.equal(engine.scores.time,95);assert.equal(engine.runActive,true);const end=engine.endRun();assert.equal(end.elapsedSeconds,2.1);
@@ -105,13 +105,13 @@ test('a late safety failure revokes an earlier within-limit completion for Time'
   const {engine,robot}=fixture({runLimitSeconds:1});rule(0,{sense:'SENSE_05',action:'ACT_09'});engine.runActive=true;engine.elapsedSeconds=0.5;engine.world.dirtCells.forEach(d=>d.cleaned=true);engine.updateOutcomes();engine.computeScores();assert.equal(engine.scores.time,100);
   engine.world.dirtCells[0].cleaned=false;engine.elapsedSeconds=2;engine.updateOutcomes();engine.computeScores();assert.equal(engine.scores.time,0);
 });
-test('a rule-driven two-chain sorting design collects, carries, releases and completes sorting',()=>{
+test('pickup and destination selection never substitute for authored travel',()=>{
   const {world,engine,robot}=fixture();appState.selectedTasks=['TASK_1','TASK_2'];body();appState.installedSensors=new Set(['SENSE_15','SENSE_03']);for(const id of ['ACTUATOR_ARM_EXT','ACTUATOR_GRIP_CLOSE','ACTUATOR_GRIP_OPEN'])appState.installedActuators.add(id);
   Object.assign(robot,{x:350,y:470,heading:0});world.objects=[{id:'one',type:'TRASH',x:375,y:470,carried:false,disposed:false}];Object.assign(world.smartBin,{x:420,y:510});
   rule(0,{sense:'SENSE_15',condition:'COND_16',action:'ACT_13',control:'CTRL_04',secondaryAction:'ACT_14'});rule(1,{sense:'SENSE_03',condition:'COND_10',action:'ACT_15',priority:'CTRL_05'});
   Object.assign(appState.addRule('TASK_2').slots,{sense:'SENSE_15',condition:'COND_16',action:'ACT_24',priority:'CTRL_05'});
   let carried=false;for(let i=0;i<100;i++){engine.tick();if(robot.heldObject){carried=true;assert.ok(Math.hypot(robot.heldObject.x-robot.x,robot.heldObject.y-robot.y)<26);}}
-  assert.equal(carried,true);assert.equal(world.objects[0].sorted,true);assert.equal(engine.pickups,1);assert.equal(engine.releases,1);assert.equal(engine.taskOutcomes[1].status,'done');
+  assert.equal(carried,true);assert.notEqual(world.objects[0].sorted,true);assert.equal(engine.pickups,1);assert.equal(engine.releases,0);
 });
 test('end-of-run incomplete attempts fail, and the next run begins with a fresh Time baseline',()=>{
   const {engine}=fixture({runLimitSeconds:0.1});appState.installedActuators.add('ACTUATOR_VACUUM');appState.installedSensors.add('SENSE_02');rule(0,{sense:'SENSE_02',action:'ACT_09'});
@@ -126,10 +126,10 @@ test('all task targets lie in the robot-accessible apartment component',()=>{
   for(let i=0;i<queue.length;i++){const [x,y]=queue[i].split(',').map(Number);for(const [dx,dy]of[[8,0],[-8,0],[0,8],[0,-8]]){const key=`${x+dx},${y+dy}`;if(!valid.has(key)||reachable.has(key))continue;const move=world.resolveMove(x,y,dx,dy,20);if(Math.hypot(move.x-x-dx,move.y-y-dy)>0.001)continue;reachable.add(key);queue.push(key);}}
   for(const target of [...world.dirtCells,...world.wetCells,...world.objects,world.smartBin,world.depositTable,world.dock])assert.ok([...reachable].some(key=>distance(key,target)<12),target.id||'station');
 });
-test('mounted map navigation cleans every real-apartment dirt cell through normal doors',()=>{
+test('mounted map and suction rules do not create an automatic navigation program',()=>{
   const {world,engine,robot}=fixture();body();appState.installedActuators.add('ACTUATOR_VACUUM');appState.installedSensors=new Set(['SENSE_07','SENSE_05']);rule(0,{sense:'SENSE_05',condition:'COND_03',action:'ACT_09'});Object.assign(appState.addRule('TASK_1').slots,{sense:'SENSE_05',condition:'COND_06',action:'ACT_10'});
-  for(let tick=0;tick<15000&&!world.dirtCells.every(d=>d.cleaned);tick++){engine.tick();assert.equal(world.checkCollision(robot.x,robot.y,robot.radius),false);}
-  assert.equal(world.dirtCells.filter(d=>d.cleaned).length,17);
+  for(let tick=0;tick<20&&!world.dirtCells.every(d=>d.cleaned);tick++){engine.tick();assert.equal(world.checkCollision(robot.x,robot.y,robot.radius),false);}
+  assert.equal(world.dirtCells.filter(d=>d.cleaned).length,0);
 });
 test('THEN still attempts its next action after the primary lacks an actuator',()=>{
   const {engine,robot}=fixture();appState.installedSensors.add('SENSE_02');appState.installedActuators.add('ACTUATOR_LED');rule(0,{sense:'SENSE_02',condition:'COND_09',action:'ACT_09',control:'CTRL_04',secondaryAction:'ACT_18'});
@@ -138,18 +138,18 @@ test('THEN still attempts its next action after the primary lacks an actuator',(
 test('reset restores NPC motion, battery, and initial simulation tool state',()=>{
   const {world,engine,robot}=fixture();const originalCat={x:world.cat.x,y:world.cat.y};world.cat.x+=100;world.cat.targetIndex=3;robot.battery=0;engine.reset();assert.deepEqual({x:world.cat.x,y:world.cat.y},originalCat);assert.equal(robot.battery,100);assert.equal(world.cat.targetIndex,0);
 });
-test('a built-in collision reflex preserves the missing-actuator failure in the same tick',()=>{
-  const {world,engine,robot}=fixture();body();appState.installedSensors.add('SENSE_02');rule(0,{sense:'SENSE_02',condition:'COND_09',action:'ACT_09'});world.resolveMove=()=>({x:robot.x,y:robot.y,moved:false});engine.tick();assert.match(engine.lastTrace.act,/VACUUM ON.*no actuator/);assert.match(engine.lastTrace.act,/built-in reflex/);
+test('missing-actuator diagnostics remain visible without hidden collision reflexes',()=>{
+  const {world,engine,robot}=fixture();body();appState.installedSensors.add('SENSE_02');rule(0,{sense:'SENSE_02',condition:'COND_09',action:'ACT_09'});world.resolveMove=()=>({x:robot.x,y:robot.y,moved:false});engine.tick();assert.match(engine.lastTrace.act,/VACUUM ON.*no actuator/);assert.doesNotMatch(engine.lastTrace.act,/built-in reflex/);
 });
 test('timer condition uses an explicit researcher speed target rather than the old scoring limit',()=>{
   const {engine}=fixture({criteria:{1:{dirtFraction:1,speedLimitSeconds:2},2:{dirtFraction:1,sortedFraction:1,speedLimitSeconds:null}}});appState.installedSensors.add('SENSE_12');rule(0,{sense:'SENSE_12',condition:'COND_18',action:'ACT_18'});engine.tickCount=21;assert.equal(engine.evaluateRules(engine.readSensors()).action,'ACT_18');
 });
 
-test('mounted map navigation cleans current dirt while locked spill rules remain inactive',()=>{
+test('map hardware does not drive and locked tool rules remain inactive',()=>{
   const {world,engine,robot}=fixture();body();for(const id of ['ACTUATOR_VACUUM','ACTUATOR_MOP'])appState.installedActuators.add(id);appState.installedSensors=new Set(['SENSE_07','SENSE_05','SENSE_06']);
   rule(0,{sense:'SENSE_05',condition:'COND_03',action:'ACT_09'});rule(2,{sense:'SENSE_06',condition:'COND_04',action:'ACT_11'});Object.assign(appState.addRule('TASK_1').slots,{sense:'SENSE_05',condition:'COND_06',action:'ACT_10'});
-  for(let tick=0;tick<15000&&(!world.dirtCells.every(d=>d.cleaned));tick++){engine.tick();assert.equal(world.checkCollision(robot.x,robot.y,robot.radius),false);}
-  assert.equal(world.dirtCells.filter(d=>d.cleaned).length,17);assert.equal(world.wetCells.filter(w=>w.cleaned).length,0);assert.equal(engine.mopTicks,0);assert.ok(engine.taskOutcomes.every(o=>o.taskId==='TASK_1'));
+  for(let tick=0;tick<20&&(!world.dirtCells.every(d=>d.cleaned));tick++){engine.tick();assert.equal(world.checkCollision(robot.x,robot.y,robot.radius),false);}
+  assert.equal(world.dirtCells.filter(d=>d.cleaned).length,0);assert.equal(world.wetCells.filter(w=>w.cleaned).length,0);assert.equal(engine.mopTicks,0);assert.ok(engine.taskOutcomes.every(o=>o.taskId==='TASK_1'));
   // The full action library still has physical effects when authored in an unlocked task.
   rule(0,{sense:'SENSE_06',condition:'COND_04',action:'ACT_11'});Object.assign(robot,{x:world.wetCells[0].x,y:world.wetCells[0].y});engine.tick();assert.ok(engine.mopTicks>0);assert.equal(world.wetCells[0].cleaned,true);
 });

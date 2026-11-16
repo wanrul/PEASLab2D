@@ -13,7 +13,7 @@ export const SENSORS_CATALOG = [
     name: 'Animal Detection Sensor',
     shortName: 'Animal Detector',
     type: 'Proximity / Radar',
-    measures: 'Presence and position of tagged cat within 1.5m radius. Returns DETECTED / CLEAR.',
+    measures: 'Distance and direction to the tagged cat, with DETECTED / CLEAR status. Choose your own response threshold in Logic.',
     misses: 'Humans, furniture, walls (only detects cat tag). Does not give direction of travel.',
     returns: 'DETECTED / CLEAR',
     bodyModule: 'Cat antenna beacon (Head)',
@@ -27,7 +27,7 @@ export const SENSORS_CATALOG = [
     name: 'Battery Sensor',
     shortName: 'Battery Sensor',
     type: 'Internal Power',
-    measures: 'LOW below the researcher-configured threshold (default 30%); otherwise HIGH above 60% and MED at lower levels.',
+    measures: 'Battery level as a percentage. Choose low and resume thresholds in Logic.',
     misses: 'Time remaining at current drain rate; distance to charging dock.',
     returns: 'HIGH / MED / LOW',
     bodyModule: 'Pulsing LED battery bar (Chest)',
@@ -47,7 +47,7 @@ export const SENSORS_CATALOG = [
     bodyModule: 'Directional head arrow pointer',
     mountLocation: 'Head Front',
     isDistractor: false,
-    tasks: ['TASK_2', 'TASK_6'],
+    tasks: ['TASK_3', 'TASK_6'],
     icon: '🧭'
   },
   {
@@ -55,7 +55,7 @@ export const SENSORS_CATALOG = [
     name: 'Distance Sensor',
     shortName: 'Distance Sensor',
     type: 'Obstacle Detection',
-    measures: 'Distance to nearest obstacle in 4 directions (front, back, left, right) up to 5m.',
+    measures: 'Obstacle distance in meters in front, back, left and right. Does not decide which way to turn.',
     misses: 'Obstacle identity (cannot distinguish cat, wall, sofa, or human operator).',
     returns: 'NEAR / FAR / BLOCKED',
     bodyModule: '360° sonar acoustic rings around chassis base',
@@ -75,7 +75,7 @@ export const SENSORS_CATALOG = [
     bodyModule: 'Undercarriage red LED scanning ring',
     mountLocation: 'Undercarriage Front',
     isDistractor: false,
-    tasks: ['TASK_1'],
+    tasks: ['TASK_2'],
     icon: '✨'
   },
   {
@@ -89,7 +89,7 @@ export const SENSORS_CATALOG = [
     bodyModule: 'Undercarriage blue LED moisture probe',
     mountLocation: 'Undercarriage Rear',
     isDistractor: false,
-    tasks: ['TASK_3'],
+    tasks: ['TASK_2'],
     icon: '💧'
   },
   {
@@ -97,13 +97,13 @@ export const SENSORS_CATALOG = [
     name: 'Floor Map Sensor',
     shortName: 'Floor Map Sensor',
     type: 'Spatial SLAM',
-    measures: 'Static floor layout and visited coverage; records dirt and wet cells only after detection by mounted local sensors.',
+    measures: 'Position, heading and automatically recorded local map observations. Unseen cells remain UNKNOWN.',
     misses: 'Unseen dirt and wet cells, dynamic moving objects and future state changes.',
     returns: 'LAYOUT + OBSERVATIONS',
     bodyModule: 'Central SLAM processor module (Chassis Top)',
     mountLocation: 'Chassis Top',
     isDistractor: false,
-    tasks: ['TASK_1', 'TASK_3'],
+    tasks: ['TASK_1', 'TASK_2', 'TASK_3'],
     icon: '🗺️'
   },
   {
@@ -117,7 +117,7 @@ export const SENSORS_CATALOG = [
     bodyModule: 'Green indicator LED on arm joint',
     mountLocation: 'Arm Joint',
     isDistractor: false,
-    tasks: ['TASK_2'],
+    tasks: ['TASK_3'],
     icon: '🤏'
   },
   {
@@ -215,7 +215,7 @@ export const SENSORS_CATALOG = [
     bodyModule: 'Dual stereoscopic optical camera eyes with blinking HUD',
     mountLocation: 'Face Visor',
     isDistractor: false,
-    tasks: ['TASK_2'],
+    tasks: ['TASK_3'],
     icon: '👁️'
   }
 ];

@@ -22,10 +22,10 @@
   <!-- 1. Full-Screen Interactive Apartment Viewport Layer -->
   <div class="fullscreen-house-container" id="fullscreenHouseContainer">
     <!-- 2D Canvas View (with 360° rotation) -->
-    <canvas id="houseCanvas"></canvas>
+    <canvas id="houseCanvas" tabindex="0"></canvas>
 
     <!-- 3D WebGL Three.js Canvas View (Apartment.glb) -->
-    <canvas id="threeCanvas"></canvas>
+    <canvas id="threeCanvas" tabindex="0"></canvas>
 
     <!-- 3D Model Loading Overlay -->
     <div id="glbLoadingOverlay" class="glb-loading-overlay">
@@ -63,7 +63,7 @@
         <span class="hud-tick-pill" id="hudTickText">Tick 0</span>
         <div class="hud-task-badge" id="hudTaskBadge" title="Current stage">
           <span id="hudTaskIcon">🧹</span>
-          <span id="hudTaskName">Stage 1 · Vacuum the floor</span>
+          <span id="hudTaskName">Task 1 of 3 · Navigation &amp; common behaviors</span>
         </div>
       </div>
 
@@ -88,7 +88,7 @@
       </div>
 
       <button class="btn btn-sm btn-primary-glass" id="hudOpenLabBtn">
-        Open Step 5 Lab ↗
+        Open Step 6 Lab ↗
       </button>
     </div>
 
@@ -99,24 +99,8 @@
   <!-- 2. Floating Top Navigation Header -->
   <header class="app-header floating-header">
     <!-- Step Navigation Tracker Pills (Click to open that step in modal) -->
-    <span id="stageProgress" class="stage-progress">Stage 1 of 3 · Vacuum the floor</span>
-    <nav class="steps-nav-tracker" id="topStepsNav">
-      <button class="step-nav-item active" data-step="1">
-        <span class="step-icon">🎯</span> 1. Purpose (P)
-      </button>
-      <button class="step-nav-item" data-step="2">
-        <span class="step-icon">📡</span> 2. Sensors (E+S)
-      </button>
-      <button class="step-nav-item" data-step="3">
-        <span class="step-icon">🦾</span> 3. Actuators (A)
-      </button>
-      <button class="step-nav-item" data-step="4">
-        <span class="step-icon">🧩</span> 4. Decision Logic
-      </button>
-      <button class="step-nav-item" data-step="5">
-        <span class="step-icon">🔬</span> 5. Test & Debug
-      </button>
-    </nav>
+    <span id="stageProgress" class="stage-progress">Task 1 of 3 · Navigation &amp; common behaviors</span>
+
 
     <!-- Header Action Controls -->
     <div class="header-actions">
@@ -141,12 +125,56 @@
         🔊 On
       </button>
 
-      <!-- Open Workstation Button -->
-      <button class="btn btn-sm btn-primary open-workstation-btn" id="openWorkstationBtn">
-        📋 Workstation
-      </button>
     </div>
   </header>
+
+  <div id="dashboardMenu" class="dashboard-menu">
+    <div id="dashboardStepMenu" class="dashboard-step-menu">
+      <strong class="workstation-menu-title">Workstation</strong>
+      <button type="button" id="stepScrollLeft" class="step-scroll-button" aria-label="Scroll to first step" hidden>◀</button>
+    <nav class="steps-nav-tracker" id="dashboardSteps" aria-label="Workstation steps">
+      <button type="button" class="step-nav-item" data-step="0" aria-controls="stepModalOverlay">0. Overview</button>
+      <button type="button" aria-controls="stepModalOverlay" class="step-nav-item" data-step="1">
+        1. Purpose (P)
+      </button>
+      <button type="button" aria-controls="stepModalOverlay" class="step-nav-item" data-step="2">
+        2. Environment (E)
+      </button>
+      <button type="button" aria-controls="stepModalOverlay" class="step-nav-item" data-step="3">
+        3. Sensors (S)
+      </button>
+      <button type="button" aria-controls="stepModalOverlay" class="step-nav-item" data-step="4">
+        4. Actuators (A)
+      </button>
+      <button type="button" aria-controls="stepModalOverlay" class="step-nav-item" data-step="5">
+        5. Decision Logic
+      </button>
+      <button type="button" aria-controls="stepModalOverlay" class="step-nav-item" data-step="6">
+        6. Test & Debug
+      </button>
+    </nav>
+      <button type="button" id="stepScrollRight" class="step-scroll-button" aria-label="Scroll to last step" hidden>▶</button>
+    </div>
+
+  </div>
+
+  <section id="environmentSceneProgress" class="environment-scene-progress" aria-label="Environment observation progress" hidden>
+    <div class="environment-scene-heading">
+      <strong>Environment observations</strong>
+      <span id="environmentSceneTotal" role="status" aria-live="polite"></span>
+    </div>
+    <div id="environmentSceneTools" hidden>
+      <div class="environment-scene-actions" role="group" aria-label="Environment views">
+        <button type="button" class="btn btn-outline" data-environment-view="fps" title="Walk around in FPS 360°">FPS 360°</button>
+        <button type="button" class="btn btn-outline" data-environment-view="thirdPerson" title="View yourself in Third person">Third person</button>
+        <button type="button" class="btn btn-outline" data-environment-view="whole" title="View whole apartment">Whole apartment</button>
+      </div>
+    </div>
+    <div class="environment-scene-checklist"></div>
+  </section>
+  <button type="button" id="environmentSceneContinue" class="btn btn-primary" hidden>Observation done</button>
+
+  <aside id="sensorAssemblyPreview" class="sensor-floating-preview" aria-label="Robot sensor preview" hidden></aside>
 
   <!-- 3. Step Selection & Workstation Popup Modal Dialog -->
   <div id="stepModalOverlay" class="step-modal-overlay" style="display: none;">
@@ -154,21 +182,12 @@
       <!-- Modal Header with Quick Step Tabs and Close Button -->
       <div class="step-modal-header">
         <div class="modal-header-meta">
-          <span class="modal-badge-step" id="modalStepBadge">STEP 1 OF 5</span>
-          <h2 id="modalStepHeading">Purpose & Performance Measures (P)</h2>
+          <span class="modal-badge-step" id="modalStepBadge">STEP 1 OF 6</span>
+          <h2 id="modalStepHeading">Set performance measurement</h2>
         </div>
 
-        <!-- Step Tabs within the Modal -->
-        <div class="modal-step-tabs" id="modalStepTabs">
-          <button class="modal-tab-btn active" data-step="1">1. Purpose</button>
-          <button class="modal-tab-btn" data-step="2">2. Sensors</button>
-          <button class="modal-tab-btn" data-step="3">3. Actuators</button>
-          <button class="modal-tab-btn" data-step="4">4. Logic</button>
-          <button class="modal-tab-btn" data-step="5">5. Test & Debug</button>
-        </div>
-
-        <button class="modal-close-btn" id="stepModalCloseBtn" title="Close to Fullscreen Map (Esc)">
-          ✕ Close [Esc]
+        <button class="modal-close-btn" id="stepModalCloseBtn" title="Collapse Workstation (Esc)">
+          ✕ Close workstation [Esc]
         </button>
       </div>
 
@@ -179,6 +198,8 @@
       </div>
     </div>
   </div>
+
+  <dialog id="logicBoardDialog" aria-label="Decision Logic canvas"></dialog>
 
   <div class="language-switch" role="group" aria-label="Interface language / 界面语言" data-i18n-skip>
     <button type="button" data-language="zh-CN" lang="zh-CN" aria-pressed="false">中文</button>

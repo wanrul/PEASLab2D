@@ -1,3 +1,4 @@
+import {learnerEngineMethods} from './learner-engine.js';
 /**
  * CollabPEAS - 10Hz Simulation Engine & Rule Evaluator
  * Evaluates unlocked task rules and factual criterion evidence.
@@ -9,6 +10,7 @@ import { appState } from '../state.js';
 import { ACTION_BLOCKS, CONDITION_BLOCKS, SENSE_BLOCKS } from '../data/blocks.js';
 import { sound } from '../view/audio.js';
 import { STAGE_CRITERIA, SIMULATION_SETTINGS, criterionDescriptions } from '../pilot-config.js';
+import { buildFloorCoverageGrid, recordCleanedFloor } from './floor-coverage.js';
 
 // Private legacy diagnostics only. Active pilot criteria are in pilot-config.js.
 export const SCORE_CONSTANTS = Object.freeze({ dirtShare: 0.7, objectShare: 0.3, catPenalty: 8, humanPenalty: 5, liquidPenalty: 25, runLimitSeconds: 120, waitTicks: 20 });
@@ -49,6 +51,7 @@ export class SimulationEngine {
     this.catOpportunities = 0;
     this.humanOpportunities = 0;
     this.catResponses = 0;
+    this.catSafePasses = 0;
     this.humanResponses = 0;
     this.movingTicks = 0;
     this.previousMoving = false;
@@ -76,6 +79,8 @@ export class SimulationEngine {
     this.perceivedWet = new Map();
     this.coverageVisited = new Set();
     this.enteredCells = new Set();
+    this.floorCoverageGrid = this.floorCoverageGrid || null;
+    this.cleanedFloorCells = new Set();
     this.explorationTarget = null;
     this.selectedGoal = null;
     this.goalSelections = [];
@@ -91,6 +96,7 @@ export class SimulationEngine {
     this.explicitMotion = false;
     this.finalOutcomes = false;
     this.scores = {};
+    this.resetLearnerRuntime();
     this.computeScores();
     this.updateOutcomes();
   }
@@ -110,7 +116,7 @@ export class SimulationEngine {
       this.runConfiguration = appState.getConfiguration();
       this.runBaseline = { ...this.scores }; // Private legacy diagnostic only.
       this.clearReflection();
-      appState.record('RUN_STARTED', String(this.runId), { runId: this.runId, configuration: this.runConfiguration, criteria: { ...this.criteria[this.runStageId] }, simulationSettings:{...this.simulationSettings} }, 5);
+      appState.record('RUN_STARTED', String(this.runId), { runId: this.runId, configuration: this.runConfiguration, criteria: { ...this.criteria[this.runStageId] }, simulationSettings:{...this.simulationSettings} }, 6);
     }
     appState.simRunning = true;
     const intervalMs = 1000 / (this.tickRateHz * appState.simSpeed);
@@ -186,18 +192,18 @@ export class SimulationEngine {
       criteria: structuredClone(this.criteriaResults), criteriaSettings: { ...this.criteria[this.runStageId] }, simulationSettings:{...this.simulationSettings},
       configuration: structuredClone(this.runConfiguration), tasksCompleted,
       outcomes: structuredClone(this.taskOutcomes), tick: this.tickCount, reason,
-      counters: { dirtCleaned: this.world.dirtCells.filter(d=>d.cleaned).length, dirtTotal: this.world.dirtCells.length,
-        ...(appState.selectedTasks.includes('TASK_2') ? { objectsSorted: this.world.objects.filter(o=>o.sorted).length, objectsTotal: this.world.objects.length, pickups: this.pickups, releases: this.releases, wrongReleases: this.wrongReleases } : {}),
+      counters: { ...this.getCleaningMetrics(),
+        ...(appState.selectedTasks.includes('TASK_3') ? { objectsSorted: this.world.objects.filter(o=>o.sorted).length, objectsTotal: this.world.objects.length, pickups: this.pickups, releases: this.releases, wrongReleases: this.wrongReleases } : {}),
         catNearMisses: this.catSafetyViolations, fastPersonPasses: this.humanSafetyViolations, vacuumSpillEvents: this.vacuumLiquidMistakes,
         spillsMopped:this.world.wetCells.filter(w=>w.cleaned).length,spillsTotal:this.world.wetCells.length,
         inspectionSeconds:this.inspectionTicks/this.tickRateHz,cleanVacuumSeconds:this.cleanVacuumTicks/this.tickRateHz,
-        catEncounters:this.catOpportunities,catStops:this.catResponses,humanEncounters:this.humanOpportunities,humanSlowResponses:this.humanResponses,humanResumes:this.humanResumes,
+        catEncounters:this.catOpportunities,catStops:this.catResponses,catSafeDetours:this.catSafePasses,humanEncounters:this.humanOpportunities,humanSlowResponses:this.humanResponses,humanResumes:this.humanResumes,
         humanNearSpeeds:[...new Set(this.humanNearSpeeds)],dockedAtBattery:this.dockedAtBattery,lowBatteryEncounter:this.lowBatteryEncounter,lowBatteryTravelTicks:this.lowBatteryTravelTicks },
       sensingMemory:{dirt:[...this.perceivedDirt.values()],wet:[...this.perceivedWet.values()],objects:[...this.perceivedObjects.values()],coverage:[...this.coverageVisited],enteredCells:[...this.enteredCells]},
       goalSelections:structuredClone(this.goalSelections),
       elapsedSeconds: this.elapsedSeconds, durationMs: this.elapsedSeconds * 1000 };
     appState.retainRun(snapshot);
-    appState.record('RUN_ENDED', String(this.runId), snapshot, 5);
+    appState.record('RUN_ENDED', String(this.runId), snapshot, 6);
     appState.notify('runEnded', snapshot);
     this.runActive = false;
     if (!snapshot.passed && !this.reflectionShown) {
@@ -205,7 +211,7 @@ export class SimulationEngine {
       const prompt = { runId: this.runId, stageId: this.runStageId, taskIds: snapshot.taskIds,
         unmet: snapshot.criteria.filter(c => c.status !== 'Achieved').map(c => c.label), shownAt: Date.now() };
       appState.reflectionPrompt = prompt;
-      appState.record('REFLECTION_SHOWN', String(this.runId), prompt, 5);
+      appState.record('REFLECTION_SHOWN', String(this.runId), prompt, 6);
       appState.notify('reflectionNeeded', prompt);
     }
     return snapshot;
@@ -240,16 +246,28 @@ export class SimulationEngine {
     robot.isStopped = false;
     this.updateCat();
     const percepts = this.readSensors();
+    this.updateLearnerMemory(percepts);
     const decision = this.evaluateRules(percepts);
     if (appState.installedSensors.has('SENSE_07')) this.observeCoverage();
     this.activeRuleFired = decision;
     if (decision) {
-      const executed = this.executeAction(decision);
-      if (executed !== false) this.firedTasks.add(decision.taskId);
-      appState.record('RULE_FIRED', decision.ruleId, { tick: this.tickCount, runId: this.runActive ? this.runId : null, preview: Boolean(this.previewActive), taskId: decision.taskId, ruleId: decision.ruleId, ...decision.trace, executed: executed !== false });
+      if(decision.executedInProgram){
+        for(const event of this.learnerEvents){
+          if(event.executed)this.firedTasks.add(event.taskId);
+          appState.record('RULE_FIRED',event.ruleId,{tick:this.tickCount,runId:this.runActive?this.runId:null,preview:Boolean(this.previewActive),...event,trace:decision.trace});
+        }
+      }else{
+        const executed=this.executeAction(decision);
+        if(executed!==false)this.firedTasks.add(decision.taskId);
+        appState.record('RULE_FIRED',decision.ruleId,{tick:this.tickCount,runId:this.runActive?this.runId:null,preview:Boolean(this.previewActive),taskId:decision.taskId,ruleId:decision.ruleId,...decision.trace,executed:executed!==false});
+      }
     } else this.lastAction = null;
-    this.drive(percepts);
+    // Navigation is authored by the learner; there is no background autopilot.
     this.updateRobotPhysics();
+    this.updateLearnerMemory(this.readSensors());
+    if(this.wasDocked&&!robot.isDocked)this.dockCycleReleased=true;
+    if(this.dockCycleReleased&&!robot.isDocked&&Math.hypot(robot.x-this.tickStart.x,robot.y-this.tickStart.y)>.001)this.chargeResumed=true;
+    this.wasDocked=robot.isDocked;
     this.updateOutcomes();
     this.computeScores();
     appState.notify('tick', { tick: this.tickCount, scores: this.scores, outcomes: this.taskOutcomes, percepts, robot, cat: this.world.cat, avatar: this.world.avatar });
@@ -425,7 +443,7 @@ export class SimulationEngine {
       }).sort((a,b) => Math.hypot(a.x-robot.x,a.y-robot.y)-Math.hypot(b.x-robot.x,b.y-robot.y))[0];
       percepts.SENSE_15 = robot.heldObject?.type || visible?.type || 'NONE';
       percepts.visibleObject = visible;
-      if (appState.selectedTasks.includes('TASK_2')) {
+      if (appState.selectedTasks.includes('TASK_3')) {
         if (visible) this.perceivedObjects.set(visible.id, { id:visible.id, x:visible.x, y:visible.y, type:visible.type });
         percepts.rememberedObjects = [...this.perceivedObjects.values()];
       }
@@ -452,6 +470,7 @@ export class SimulationEngine {
   }
 
   destination() {
+    if(this.selectedGoal&&typeof this.selectedGoal==='object')return this.selectedGoal;
     const stations = { BIN: this.world.smartBin, TABLE: this.world.depositTable, DOCK: this.world.dock };
     return stations[this.selectedGoal] ? { ...stations[this.selectedGoal], target: this.selectedGoal } : null;
   }
@@ -490,6 +509,7 @@ export class SimulationEngine {
     if (this.rulesRevision !== appState.rulesRevision) {
       this.ruleRuntime = {};
     this.programRuntime = {};
+      this.learnerVariables=Object.create(null);this.learnerMotion={};
       this.pendingThen = [];
       this.rulesRevision = appState.rulesRevision;
     }
@@ -571,7 +591,7 @@ export class SimulationEngine {
       case 'ACT_14': {
         robot.gripperClosed = true;
         if (robot.armExtended && !robot.heldObject) {
-          const obj = this.world.objects.filter(o=>!o.carried&&!o.disposed&&Math.hypot(o.x-robot.x,o.y-robot.y)<45).sort((a,b)=>Math.hypot(a.x-robot.x,a.y-robot.y)-Math.hypot(b.x-robot.x,b.y-robot.y))[0];
+          const obj = this.world.objects.filter(o=>!o.carried&&!o.disposed&&Math.hypot(o.x-robot.x,o.y-robot.y)<(Number.isFinite(robot.armReachPx)?robot.armReachPx:45)).sort((a,b)=>Math.hypot(a.x-robot.x,a.y-robot.y)-Math.hypot(b.x-robot.x,b.y-robot.y))[0];
           if (obj) { robot.heldObject=obj; obj.carried=true; this.perceivedObjects.delete(obj.id); this.pickups++; }
         }
         break;
@@ -635,41 +655,10 @@ export class SimulationEngine {
     const move = this.world.resolveMove(r.x,r.y,Math.cos(r.heading)*speed,Math.sin(r.heading)*speed,r.radius);
     if(move.moved) { r.x=move.x; r.y=move.y; }
     else {
-      r.heading += Math.PI/3;
-      this.reflexTicks = 12;
-      this.lastTrace.act = `${this.lastTrace.act ? this.lastTrace.act + '; ' : ''}built-in reflex — collision stop and turn`;
+      this.wallCollisions++;
+      this.lastMovementBlocked=true;
+      this.lastTrace.act = 'Movement blocked; no automatic turn';
     }
-  }
-
-  drive(p) {
-    const r = this.world.robot;
-    if (!this.canDrive() || r.isStopped || this.explicitMotion) return;
-    let targets = [];
-    if (appState.installedSensors.has('SENSE_03') && p.SENSE_03?.target && ((appState.selectedTasks.includes('TASK_2') && r.heldObject && ['BIN','TABLE'].includes(p.SENSE_03.target)) || (appState.selectedTasks.includes('TASK_6') && p.SENSE_03.target==='DOCK'))) targets = [p.SENSE_03];
-    else {
-      if (appState.installedSensors.has('SENSE_07') && appState.installedSensors.has('SENSE_05') && appState.selectedTasks.includes('TASK_1') && p.mapDirt) targets.push(...p.mapDirt);
-      if (appState.installedSensors.has('SENSE_07') && appState.installedSensors.has('SENSE_06') && appState.selectedTasks.includes('TASK_3') && p.mapWet) targets.push(...p.mapWet);
-      if (appState.selectedTasks.includes('TASK_2') && !r.heldObject) {
-        if (appState.installedSensors.has('SENSE_15') && p.visibleObject) targets.push(p.visibleObject);
-        if (appState.installedSensors.has('SENSE_15') && p.rememberedObjects) targets.push(...p.rememberedObjects);
-      }
-      // Underfoot channels never reveal distant cells.
-    }
-    if (!targets.length && appState.installedSensors.has('SENSE_07')) {
-      const exploration=this.nextExplorationTarget();
-      if(exploration) targets.push(exploration);
-    }
-    // Keep a still-perceived goal while following its doorway route: switching
-    // on straight-line distance mid-detour can oscillate between two rooms.
-    const routedTarget = targets.find(goal => `${goal.x},${goal.y}` === this.navigationRoute?.key);
-    const target = routedTarget || targets.sort((a,b)=>Math.hypot(a.x-r.x,a.y-r.y)-Math.hypot(b.x-r.x,b.y-r.y))[0];
-    if(this.reflexTicks>0) this.reflexTicks--;
-    else if(target && Math.hypot(target.x-r.x,target.y-r.y)>5) {
-      const waypoint=this.routeTo(target);
-      if(waypoint) r.heading=Math.atan2(waypoint.y-r.y,waypoint.x-r.x);
-    }
-    if(!target)this.navigationRoute=null;
-    if (!target || Math.hypot(target.x-r.x,target.y-r.y)>5) this.moveRobot();
   }
 
   coveragePoints() {
@@ -700,59 +689,22 @@ export class SimulationEngine {
     for(const p of this.coveragePoints()) if(Math.hypot(p.x-r.x,p.y-r.y)<5) this.coverageVisited.add(p.key);
   }
 
-  nextExplorationTarget() {
-    if(this.explorationTarget && !this.coverageVisited.has(this.explorationTarget.key)) return this.explorationTarget;
-    const r=this.world.robot;
-    this.explorationTarget=this.coveragePoints().filter(p=>!this.coverageVisited.has(p.key))
-      .sort((a,b)=>Math.hypot(a.x-r.x,a.y-r.y)-Math.hypot(b.x-r.x,b.y-r.y))[0] || null;
-    return this.explorationTarget;
+  get lowBatteryPercent() { return this.authoredLowThreshold ?? this.criteria[appState.currentStage].lowBatteryPercent ?? 30; }
+
+  recordFloorCleaning() {
+    if (!this.floorCoverageGrid) this.floorCoverageGrid = buildFloorCoverageGrid(this.world);
+    const robot = this.world.robot;
+    recordCleanedFloor(this.floorCoverageGrid, this.cleanedFloorCells, this.tickStart || robot, robot, robot.radius);
   }
 
-  routeTo(target) {
-    const r=this.world.robot;
-    const direct=(from,to)=>{
-      const steps=Math.ceil(Math.hypot(to.x-from.x,to.y-from.y)/2);
-      for(let i=1;i<=steps;i++) if(this.world.checkCollision(from.x+(to.x-from.x)*i/steps,from.y+(to.y-from.y)*i/steps,r.radius)) return false;
-      return true;
-    };
-    // Planning uses only the static collision model and an already perceived goal.
-    // It never searches world task entities or alters the normal door openings.
-    if(direct(r,target)) {this.navigationRoute=null;return target;}
-    const key=`${target.x},${target.y}`;
-    if(this.navigationRoute?.key===key) {
-      const points=this.navigationRoute.points;
-      while(points.length>1&&Math.hypot(points[0].x-r.x,points[0].y-r.y)<3)points.shift();
-      if(points[0]&&direct(r,points[0]))return points[0];
-    }
-    const size=8;
-    if(!this.navigationGrid) {
-      const grid=new Map();
-      for(let x=0;x<this.world.width;x+=size)for(let y=0;y<this.world.height;y+=size)
-        if(!this.world.checkCollision(x,y,r.radius+1))grid.set(`${x},${y}`,{x,y});
-      this.navigationGrid=grid;
-    }
-    const grid=this.navigationGrid;
-    const nearest=point=>[...grid.entries()].sort((a,b)=>Math.hypot(a[1].x-point.x,a[1].y-point.y)-Math.hypot(b[1].x-point.x,b[1].y-point.y)).slice(0,16).find(([,node])=>direct(point,node))?.[0];
-    const start=nearest(r),goal=nearest(target);
-    if(!start||!goal)return null;
-    const queue=[start],parents=new Map([[start,null]]);
-    for(let i=0;i<queue.length&&!parents.has(goal);i++) {
-      const current=grid.get(queue[i]);
-      for(const [dx,dy]of[[size,0],[-size,0],[0,size],[0,-size]]) {
-        const nextKey=`${current.x+dx},${current.y+dy}`,next=grid.get(nextKey);
-        if(!next||parents.has(nextKey)||!direct(current,next))continue;
-        parents.set(nextKey,queue[i]);queue.push(nextKey);
-      }
-    }
-    if(!parents.has(goal))return null;
-    const points=[target];
-    for(let node=goal;node!==null;node=parents.get(node))points.unshift(grid.get(node));
-    this.navigationRoute={key,points};
-    while(points.length>1&&Math.hypot(points[0].x-r.x,points[0].y-r.y)<3)points.shift();
-    return points[0];
+  getCleaningMetrics({initialize=true}={}) {
+    if (!this.floorCoverageGrid && initialize) this.floorCoverageGrid = buildFloorCoverageGrid(this.world);
+    const percentage = (count,total) => total ? Math.min(count < total ? 99.9 : 100, Math.round(count / total * 1000) / 10) : 0;
+    const floorCleanedCells = this.cleanedFloorCells.size, floorTotalCells = this.floorCoverageGrid?.size || 0;
+    const dirtCleaned = this.world.dirtCells.filter(dirt => dirt.cleaned).length, dirtTotal = this.world.dirtCells.length;
+    return { floorCleanedCells, floorTotalCells, floorCoveragePercent:percentage(floorCleanedCells,floorTotalCells),
+      dirtCleaned, dirtTotal, dirtCleanedPercent:percentage(dirtCleaned,dirtTotal) };
   }
-
-  get lowBatteryPercent() { return this.criteria[appState.currentStage].lowBatteryPercent ?? 30; }
 
   updateRobotPhysics() {
     const r=this.world.robot;
@@ -771,6 +723,7 @@ export class SimulationEngine {
     for (const [name,entity,opportunityRadius,violationRadius] of [['cat',this.world.cat,90,40],['human',this.world.avatar,120,60]]) {
       const distance=Math.hypot(r.x-entity.x,r.y-entity.y), sensedDistance=this.tickStart?Math.hypot(this.tickStart.x-entity.x,this.tickStart.y-entity.y):distance, near=sensedDistance<=opportunityRadius;
       if(near && !this.encounters[name] && (moving || this.previousMoving)) { this[`${name}Opportunities`]++; this.encounters[name]=true; }
+      if(name==='cat'&&!near&&this.encounters.cat&&!this.encounters.catViolation&&!this.encounters.catResponse)this.catSafePasses++;
       // A parked robot cannot create a new encounter from movement long ago.
       if(!near)this.encounters[name]=false;
       if(!near) { this.encounters[`${name}Violation`]=false; this.encounters[`${name}Response`]=false; }
@@ -795,65 +748,63 @@ export class SimulationEngine {
     if(r.mopDeployed && appState.installedActuators.has('ACTUATOR_MOP')) {
       this.mopTicks++; for(const w of wet) w.cleaned=true;
     }
+    if (r.battery > 0 && ((r.vacuumActive && appState.installedActuators.has('ACTUATOR_VACUUM') && !wet.length) ||
+        (r.mopDeployed && appState.installedActuators.has('ACTUATOR_MOP')))) this.recordFloorCleaning();
     if(Math.hypot(r.x-this.world.dock.x,r.y-this.world.dock.y)<30)this.reachedDock=true;
   }
 
   updateOutcomes(final=false) {
     this.finalOutcomes=final;
-    const dirt=this.world.dirtCells,objects=this.world.objects,wet=this.world.wetCells;
-    const cleaned=dirt.filter(d=>d.cleaned).length,sorted=objects.filter(o=>o.sorted).length,mopped=wet.filter(w=>w.cleaned).length;
-    const done=[dirt.length>0&&cleaned===dirt.length,objects.length>0&&sorted===objects.length,wet.length>0&&mopped===wet.length,
-      this.catOpportunities>0&&this.catResponses>=this.catOpportunities&&this.movingTicks>0&&this.catSafetyViolations===0,this.humanOpportunities>0&&this.humanResponses>=this.humanOpportunities&&this.movingTicks>0&&this.humanSafetyViolations===0,this.dockedAtBattery!==null];
     this.updateCriteria();
-    // Functional criterion settings govern task completion; Speed stays separate.
-    for (const { taskId, status } of this.criteriaResults) {
-      if (taskId) done[Number(taskId.slice(5)) - 1] = status === 'Achieved';
-    }
-    const started=[this.vacuumTicks>0,this.pickups>0,this.mopTicks>0,this.catOpportunities>0,this.humanOpportunities>0,this.dockRequested||this.reachedDock];
-    const failed=[false,this.wrongReleases>0,false,this.catSafetyViolations>0,this.humanSafetyViolations>0,this.world.robot.battery<=0&&!done[5]];
-    const summaries=[this.vacuumLiquidMistakes?`Vacuumed on a spill ${this.vacuumLiquidMistakes} times.`:!this.vacuumTicks?'Never vacuumed.':!cleaned?'Vacuum ran but nothing was cleaned.':`Cleaned ${cleaned} of ${dirt.length} dirty cells.`,
-      this.wrongReleases?`Released ${this.wrongReleases} objects in the wrong place.`:!this.pickups?'Never grabbed anything.':!sorted?`Picked up ${this.pickups}, released none at a destination.`:`Sorted ${sorted} of ${objects.length} objects.`,
-      !this.mopTicks?'Never mopped.':!mopped?'Mop ran but nothing was cleaned.':`Mopped ${mopped} of ${wet.length} spills.`,
-      this.catSafetyViolations?`Kept moving with the cat within reach ${this.catSafetyViolations} times.`:done[3]?'Stopped for the cat every time.':this.catOpportunities?'Moved near the cat without stopping.':'No moving encounter with the cat.',
-      this.humanSafetyViolations?`Passed the person at full speed ${this.humanSafetyViolations} times.`:done[4]?'Slowed down for the person every time.':this.humanOpportunities?'Moved near the person without slowing.':'No moving encounter with the person.',
-      done[5]?`Docked at ${Math.round(this.dockedAtBattery)}% battery.`:failed[5]?'Battery ran out before docking.':this.reachedDock?'Reached the dock but never connected.':'Never approached the dock.'];
-    this.taskOutcomes=done.map((success,i)=>({taskId:`TASK_${i+1}`,status:success?'done':failed[i]||final?'failed':started[i]?'in_progress':'not_started',summary:summaries[i]})).filter(outcome => appState.selectedTasks.includes(outcome.taskId)).sort((a,b)=>appState.selectedTasks.indexOf(a.taskId)-appState.selectedTasks.indexOf(b.taskId));
+    const metrics=this.getCleaningMetrics({initialize:false}),objects=this.world.objects,wet=this.world.wetCells;
+    const legacyCriteria=Number.isFinite(this.criteria[appState.currentStage]?.dirtFraction)&&!Number.isFinite(this.criteria[appState.currentStage]?.navigationFraction);
+    const descriptions={
+      TASK_1:`Visited ${this.navigationCoveragePercent().toFixed(1)}% of reachable floor; ${this.wallCollisions} blocked moves.`,
+      TASK_2:`Floor ${metrics.floorCoveragePercent.toFixed(1)}%; dirt ${metrics.dirtCleaned} / ${metrics.dirtTotal}; spills ${wet.filter(w=>w.cleaned).length} / ${wet.length}; ${this.vacuumLiquidMistakes} vacuum-on-liquid events.`,
+      TASK_3:`Sorted ${objects.filter(o=>o.sorted).length} / ${objects.length} objects; ${this.wrongReleases} wrong releases.`,
+      TASK_4:`${this.catOpportunities} cat encounters; ${this.catResponses} stops; ${this.catSafetyViolations} unsafe crossings.`,
+      TASK_5:`${this.humanOpportunities} person encounters; ${this.humanResponses} slow responses; ${this.humanResumes} resumes.`,
+      TASK_6:this.dockedAtBattery===null?'Not yet connected at the dock.':`Connected at ${this.dockedAtBattery.toFixed(1)}%; resumed ${this.chargeResumed?'yes':'no'}.`
+    };
+    if(legacyCriteria)descriptions.TASK_1=`Cleaned ${metrics.dirtCleaned} of ${metrics.dirtTotal} dirty cells.`;
+    const started={TASK_1:this.movingTicks>0,TASK_2:this.vacuumTicks+this.mopTicks>0,TASK_3:this.pickups>0,TASK_4:this.catOpportunities>0,TASK_5:this.humanOpportunities>0,TASK_6:this.dockRequested||this.reachedDock};
+    this.taskOutcomes=appState.selectedTasks.map(taskId=>{const criteria=this.criteriaResults.filter(c=>c.taskId===taskId),done=criteria.length>0&&criteria.every(c=>c.status==='Achieved');return {taskId,status:done?'done':final?'failed':started[taskId]?'in_progress':'not_started',summary:descriptions[taskId]};});
     const allDone=this.criteriaResults.every(c=>c.status==='Achieved');
-    if(!allDone) this.completionSeconds=null;
-    else if(this.runActive && this.completionSeconds===null)this.completionSeconds=this.elapsedSeconds;
+    if(!allDone)this.completionSeconds=null;
+    else if(this.runActive&&this.completionSeconds===null)this.completionSeconds=this.elapsedSeconds;
   }
 
   updateCriteria() {
-    const config = this.criteria[appState.currentStage];
-    const counts = {
-      cleaning: [this.world.dirtCells.filter(d=>d.cleaned).length,this.world.dirtCells.length,config.dirtFraction,'dirt cells cleaned'],
-      sorting: [this.world.objects.filter(o=>o.sorted).length,this.world.objects.length,config.sortedFraction,'objects correctly sorted'],
-      spills: [this.world.wetCells.filter(w=>w.cleaned).length,this.world.wetCells.length,config.spillFraction,'spills mopped']
+    const stage=appState.currentStage,config={...this.criteria[stage]},choice=appState.stagePurposes[stage]?.TASK_1?.priority ?? appState.stagePurposes[stage]?.TASK_2?.priority;
+    if(Number.isFinite(config.floorFraction)&&choice)config.floorFraction=choice==='speed'?.6:1;
+    const metrics=this.getCleaningMetrics({initialize:false});
+    const legacyCriteria=Number.isFinite(config.dirtFraction)&&!Number.isFinite(config.navigationFraction);
+    const counts={
+      cleaning:legacyCriteria?[metrics.dirtCleaned,metrics.dirtTotal,config.dirtFraction,'dirt cells cleaned']:[metrics.floorCleanedCells,metrics.floorTotalCells,config.floorFraction,'floor cells actually cleaned'],
+      sorting:[this.world.objects.filter(o=>o.sorted).length,this.world.objects.length,config.sortedFraction,'objects correctly sorted'],
+      spills:[this.world.wetCells.filter(w=>w.cleaned).length,this.world.wetCells.length,legacyCriteria?config.spillFraction:1,'spills mopped once']
     };
-    const results=criterionDescriptions(appState.currentStage,this.criteria).filter(c=>c.id!=='speed').map(criterion=>{
+    this.criteriaResults=criterionDescriptions(stage,{...this.criteria,[stage]:config}).filter(c=>c.id!=='speed').map(criterion=>{
       let achieved=false,partial=false,observed;
-      if(counts[criterion.id]) {
+      if(counts[criterion.id]){
         const [count,total,fraction,label]=counts[criterion.id];
-        achieved=total>0&&count/total>=fraction;partial=count>0;observed=`${count} / ${total} ${label}`;
-        if(criterion.id==='spills') {achieved &&= this.vacuumLiquidMistakes<=config.maxVacuumLiquidMistakes;observed+=`; ${this.vacuumLiquidMistakes} vacuum-on-liquid events`;}
-      } else if(criterion.id==='cat') {
-        achieved=this.catOpportunities>=config.minCatEncounters && this.catResponses>=this.catOpportunities && this.movingTicks>0 && this.catSafetyViolations<=config.maxCatViolations;
-        partial=this.catResponses>0;observed=`${this.catOpportunities} moving encounters; ${this.catResponses} stops; ${this.catSafetyViolations} unsafe crossings`;
-      } else if(criterion.id==='human') {
-        achieved=this.humanOpportunities>=config.minHumanEncounters && this.humanResponses>=this.humanOpportunities && this.humanResumes>=config.minHumanResumes && this.movingTicks>0 && this.humanSafetyViolations<=config.maxHumanViolations;
-        partial=this.humanResponses>0;observed=`${this.humanOpportunities} moving encounters; ${this.humanResponses} slow responses; ${this.humanResumes} resumes; ${this.humanSafetyViolations} fast passes`;
-      } else if(criterion.id==='docking') {
-        achieved=this.lowBatteryEncounter && this.lowBatteryGoalSelected && this.lowBatteryTravelTicks>0 && this.dockedAtBattery>0;
-        partial=this.lowBatteryGoalSelected;observed=this.dockedAtBattery===null?`Low battery ${this.lowBatteryEncounter?'observed':'not observed'}; ${this.lowBatteryTravelTicks} travel ticks toward selected DOCK; not connected`:`Connected at ${this.dockedAtBattery.toFixed(1)}% battery; ${this.lowBatteryTravelTicks} low-battery travel ticks`;
+        const ratio=criterion.id==='cleaning'&&!legacyCriteria?(metrics.floorTotalCells?metrics.floorCleanedCells/metrics.floorTotalCells:0):(total?count/total:1);
+        achieved=ratio>=fraction;partial=count>0;observed=criterion.id==='cleaning'&&!legacyCriteria?`${metrics.floorCoveragePercent.toFixed(1)}% floor coverage (target ${(fraction*100).toFixed(0)}%); ${metrics.dirtCleaned} / ${metrics.dirtTotal} dirt spots`:`${count} / ${total} ${label}`;
+        if(criterion.id==='spills'){achieved&&=this.vacuumLiquidMistakes<=(config.maxVacuumLiquidMistakes??0);observed+=`; ${this.vacuumLiquidMistakes} vacuum-on-liquid events`;}
+      }else if(criterion.id==='navigation'){
+        const fraction=config.navigationFraction??(stage===1?1:0),coverage=this.navigationCoveragePercent();
+        achieved=this.movingTicks>0&&coverage+1e-9>=fraction*100&&this.wallCollisions===0;partial=this.movingTicks>0;observed=`${coverage.toFixed(1)}% visited; ${this.wallCollisions} blocked moves`;
+      }else if(criterion.id==='cat'){
+        achieved=this.catOpportunities>=config.minCatEncounters&&this.catResponses+this.catSafePasses>=this.catOpportunities&&this.movingTicks>0&&this.catSafetyViolations<=config.maxCatViolations;partial=this.catResponses>0;observed=`${this.catOpportunities} moving encounters; ${this.catResponses} stops; ${this.catSafePasses} safe detours; ${this.catSafetyViolations} unsafe crossings`;
+      }else if(criterion.id==='human'){
+        achieved=this.humanOpportunities>=config.minHumanEncounters&&this.humanResponses>=this.humanOpportunities&&this.humanResumes>=config.minHumanResumes&&this.humanSafetyViolations<=config.maxHumanViolations;partial=this.humanResponses>0;observed=`${this.humanOpportunities} moving encounters; ${this.humanResponses} slow responses; ${this.humanResumes} resumes; ${this.humanSafetyViolations} fast passes`;
+      }else if(criterion.id==='docking'){
+        achieved=this.lowBatteryEncounter&&this.lowBatteryGoalSelected&&this.lowBatteryTravelTicks>0&&this.dockedAtBattery>0&&this.chargeResumed;partial=this.lowBatteryGoalSelected;observed=this.dockedAtBattery===null?`Low battery ${this.lowBatteryEncounter?'observed':'not observed'}; ${this.lowBatteryTravelTicks} travel ticks toward selected DOCK; not connected`:`Connected at ${this.dockedAtBattery.toFixed(1)}% battery; ${this.lowBatteryTravelTicks} low-battery travel ticks; resumed ${this.chargeResumed?'yes':'no'}`;
       }
       return {...criterion,observed,status:achieved?'Achieved':partial?'Partially achieved':'Not achieved'};
     });
-    const functionalDone=results.every(c=>c.status==='Achieved');
-    if(!functionalDone)this.functionalCompletionSeconds=null;
-    else if(this.runActive && this.functionalCompletionSeconds===null)this.functionalCompletionSeconds=this.elapsedSeconds;
-    this.criteriaResults=results;
-    const speed=criterionDescriptions(appState.currentStage,this.criteria).find(c=>c.id==='speed');
-    if(speed){const duration=this.functionalCompletionSeconds??this.elapsedSeconds;this.criteriaResults.push({...speed,observed:`${duration.toFixed(1)} seconds${functionalDone?' to complete tasks':' elapsed; tasks incomplete'}`,status:functionalDone&&duration<=config.speedLimitSeconds?'Achieved':'Not achieved'});}
+    const done=this.criteriaResults.every(c=>c.status==='Achieved');if(!done)this.functionalCompletionSeconds=null;else if(this.runActive&&this.functionalCompletionSeconds===null)this.functionalCompletionSeconds=this.elapsedSeconds;
+    const speed=criterionDescriptions(stage,this.criteria).find(c=>c.id==='speed');if(speed){const duration=this.functionalCompletionSeconds??this.elapsedSeconds;this.criteriaResults.push({...speed,observed:`${duration.toFixed(1)} seconds`,status:done&&duration<=config.speedLimitSeconds?'Achieved':'Not achieved'});}
   }
 
   computeScores() {
@@ -867,3 +818,5 @@ export class SimulationEngine {
     this.scores.composite=Math.round((this.scores.coverage*w.Coverage+this.scores.safety*w.Safety+this.scores.time*w.Time+this.scores.hazard*w.Hazard)/100);
   }
 }
+
+Object.assign(SimulationEngine.prototype,learnerEngineMethods);

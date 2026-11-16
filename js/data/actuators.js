@@ -53,10 +53,10 @@ export const ACTUATORS_CATALOG = [
     id: 'ACTUATOR_VACUUM',
     name: 'Vacuum Suction',
     category: 'Cleaning Tools',
-    does: 'Activates cyclonic suction on undercarriage. Cleans dry DIRTY cells within 1s.',
+    does: 'Removes dry dirt under the robot while suction is on.',
     cannot: 'CANNOT CLEAN WET CELLS. Sucking liquid short-circuits and damages the impeller!',
     bodyPart: 'Undercarriage vacuum intake nozzle & cyclonic filter',
-    requiredForTasks: ['TASK_1'],
+    requiredForTasks: ['TASK_2'],
     isDistractor: false,
     icon: '🌪️'
   },
@@ -64,10 +64,10 @@ export const ACTUATORS_CATALOG = [
     id: 'ACTUATOR_MOP',
     name: 'Mop Pad Deploy / Retract',
     category: 'Cleaning Tools',
-    does: 'Lowers microfiber absorbent mop pad onto floor. Cleans WET liquid spills in 2s.',
-    cannot: 'Cannot clean dry dust particles; cannot run simultaneously with vacuum suction.',
+    does: 'Lowers an absorbent pad; one contact with a spill cleans it.',
+    cannot: 'Cannot remove dry dust; keep vacuum suction off when contacting water.',
     bodyPart: 'Pneumatic mop arm with absorbent sponge pad',
-    requiredForTasks: ['TASK_3'],
+    requiredForTasks: ['TASK_2'],
     isDistractor: false,
     icon: '🧽'
   },
@@ -80,7 +80,7 @@ export const ACTUATORS_CATALOG = [
     does: 'Telescopes robotic arm forward up to 0.6m toward detected target object.',
     cannot: 'Cannot reach past 0.6m; cannot penetrate through solid furniture or walls.',
     bodyPart: 'Telescopic carbon-fiber robotic arm segment',
-    requiredForTasks: ['TASK_2'],
+    requiredForTasks: ['TASK_3'],
     isDistractor: false,
     icon: '🦾'
   },
@@ -91,7 +91,7 @@ export const ACTUATORS_CATALOG = [
     does: 'Closes robotic gripper fingers around adjacent target object; locks grip.',
     cannot: 'Cannot grab objects out of reach; cannot hold more than one object at once.',
     bodyPart: 'Two-finger motorized claw with rubberized pads',
-    requiredForTasks: ['TASK_2'],
+    requiredForTasks: ['TASK_3'],
     isDistractor: false,
     icon: '✊'
   },
@@ -102,7 +102,7 @@ export const ACTUATORS_CATALOG = [
     does: 'Opens gripper fingers to release held object into target bin or table.',
     cannot: 'Cannot throw or place with precision; object drops to surface under claw.',
     bodyPart: 'Spring-loaded quick-release finger actuators',
-    requiredForTasks: ['TASK_2'],
+    requiredForTasks: ['TASK_3'],
     isDistractor: false,
     icon: '🖐️'
   },
@@ -113,7 +113,7 @@ export const ACTUATORS_CATALOG = [
     does: 'Folds mechanical arm back into compact home compartment flush with chassis.',
     cannot: 'Cannot retract while claw is gripping an object that exceeds bay volume.',
     bodyPart: 'Arm folding hinges and recessed chassis cradle',
-    requiredForTasks: ['TASK_2'],
+    requiredForTasks: ['TASK_3'],
     isDistractor: false,
     icon: '📥'
   },
@@ -150,7 +150,7 @@ export const ACTUATORS_CATALOG = [
     does: 'Transmits 2.4GHz RF pulse to trigger smart trash bin lid servo before item deposit.',
     cannot: 'Cannot open non-smart furniture doors or sinks.',
     bodyPart: 'RF wireless transceiver antenna',
-    requiredForTasks: ['TASK_2'],
+    requiredForTasks: ['TASK_3'],
     isDistractor: false,
     icon: '🗑️'
   },

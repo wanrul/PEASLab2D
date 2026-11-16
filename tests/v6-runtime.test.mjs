@@ -1,3 +1,4 @@
+import { observeAllEnvironmentForTest } from './fixtures/structured-solution.mjs';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { appState } from '../js/state.js';
@@ -5,32 +6,36 @@ import { SessionLogger } from '../js/logging/session-log.js';
 import { SimulationEngine } from '../js/sim/engine.js';
 import { ApartmentWorld } from '../js/sim/world.js';
 
-test('empty design, physical capacities, task priority gate and unlocked revisits', () => {
+test('empty design, environment observation, physical capacities and unlocked revisits', () => {
   const s = new appState.constructor();
   assert.deepEqual(s.selectedTasks, ['TASK_1','TASK_4','TASK_5','TASK_6']);
   assert.equal(s.installedSensors.size, 0);
   assert.equal(s.installedActuators.size, 0);
   assert.ok(s.rules.every(r => Object.values(r.slots).every(v => v === null)));
-  assert.equal(s.setStep(4), false);
+  assert.equal(s.setStep(5), false);
   assert.equal(s.setStep(2), false);
   s.setTaskPriority('TASK_1','thorough');
   assert.equal(s.setStep(2), true);
+  assert.equal(s.canContinue(2), false);
+  assert.equal(s.setStep(3), false);
+  observeAllEnvironmentForTest(s);
   assert.equal(s.canContinue(2), true);
+  assert.equal(s.setStep(3), true);
   for(let i=1;i<=11;i++) s.toggleSensor(`SENSE_${String(i).padStart(2,'0')}`);
   assert.equal(s.toggleSensor('SENSE_12').success, false);
-  assert.equal(s.setStep(3), true);
+  assert.equal(s.setStep(4), true);
   for(let i=0;i<10;i++) s.toggleActuator(`module${i}`);
   assert.equal(s.toggleActuator('extra').success, false);
-  assert.equal(s.setStep(4), true);
+  assert.equal(s.setStep(5), true);
   assert.equal(s.setRuleSlot(0,'action','SENSE_01'), false);
   s.setRuleSlot(0,'sense','SENSE_01');
   s.setRuleSlot(0,'action','ACT_09');
   assert.equal(s.canContinue(), true);
-  assert.equal(s.setStep(5), true);
-  assert.equal(s.setStep(2), true);
+  assert.equal(s.setStep(6), true);
+  assert.equal(s.setStep(3), true);
   for(const id of [...s.installedSensors]) s.toggleSensor(id);
-  assert.equal(s.setStep(5), true);
-  assert.deepEqual(s.revisitedSteps, [2]);
+  assert.equal(s.setStep(6), true);
+  assert.deepEqual(s.revisitedSteps, [3]);
 });
 
 test('CSV contains exactly five fields and escapes quoted multiline notes', () => {
@@ -121,7 +126,7 @@ test('preview restores entity identities, world values, counters and speed stays
   engine.endRun();
 });
 
-test('run end logs step five, replaces stale reflection once, and finished sessions cannot start', () => {
+test('run end logs step six, replaces stale reflection once, and finished sessions cannot start', () => {
   appState.sessionFinished = false;
   const engine = new SimulationEngine(new ApartmentWorld()), logger = new SessionLogger(appState);
   let cleared = 0;
@@ -129,11 +134,11 @@ test('run end logs step five, replaces stale reflection once, and finished sessi
   engine.start(); engine.stop();
   cleared = 0;
   appState.reflectionPrompt = { shownAt: Date.now() };
-  appState.currentStep = 2;
+  appState.currentStep = 3;
   engine.endRun('revision');
   assert.equal(appState.reflectionPrompt.runId,1);
   const ended=logger.events.findLast(e=>e.event==='RUN_ENDED');
-  assert.equal(ended.step, 5);
+  assert.equal(ended.step, 6);
   assert.equal(cleared, 1);
   appState.reflectionPrompt = {};
   engine.reset();

@@ -36,28 +36,30 @@ test('every module card renders the same neutral fields', () => {
   }
 });
 
-test('sensor editor exposes all fifteen cards and the active stage budget of empty points', () => {
+test('sensor library exposes fifteen click-to-install cards and its current stage budget', () => {
   const old = appState.installedSensors;
   appState.installedSensors = new Set();
   const container = { innerHTML: '', querySelectorAll: () => [], querySelector: () => ({}) };
   try {
     renderSensorStep(container);
     assert.equal((container.innerHTML.match(/data-module-id=/g) || []).length, 15);
-    assert.equal((container.innerHTML.match(/data-mount-index=/g) || []).length, appState.sensorBudget);
+    assert.equal((container.innerHTML.match(/draggable="false"/g) || []).length, 15);
+    assert.equal((container.innerHTML.match(/data-mount-index=/g) || []).length, 0, 'slots belong to the floating preview');
     assert.match(container.innerHTML, new RegExp(`0 / ${appState.sensorBudget} mounted`));
     assert.match(container.innerHTML, new RegExp(`Up to ${appState.sensorBudget} sensors. No minimum selection`));
     assert.doesNotMatch(container.innerHTML, /mounting-continue" disabled/);
   } finally { appState.installedSensors = old; }
 });
 
-test('body editor exposes fourteen cards, ten points, and capacity only', () => {
+test('actuator library exposes fourteen click-to-install cards and its ten-position capacity', () => {
   const old = appState.installedActuators;
   appState.installedActuators = new Set(ACTUATORS_CATALOG.slice(0, 7).map(a => a.id));
   const container = { innerHTML: '', isConnected: false, querySelectorAll: () => [], querySelector: () => ({}) };
   try {
     renderActuatorStep(container);
     assert.equal((container.innerHTML.match(/data-module-id=/g) || []).length, 14);
-    assert.equal((container.innerHTML.match(/data-mount-index=/g) || []).length, 10);
+    assert.equal((container.innerHTML.match(/draggable="false"/g) || []).length, 14);
+    assert.equal((container.innerHTML.match(/data-mount-index=/g) || []).length, 0);
     assert.match(container.innerHTML, /7 \/ 10 mounted/);
     assert.match(container.innerHTML, /Up to 10 actuators. No minimum selection/);
     assert.ok(!container.innerHTML.includes('mounting-continue" disabled'));
@@ -66,5 +68,5 @@ test('body editor exposes fourteen cards, ten points, and capacity only', () => 
 
 test('Map card shows its local-detection limit in the concise module description',()=>{
   const map=SENSORS_CATALOG.find(sensor=>sensor.id==='SENSE_07');
-  assert.match(moduleCard(map,'sensor'),/only after detection by mounted local sensors/);
+  assert.match(moduleCard(map,'sensor'),/Unknown areas remain unknown/);
 });

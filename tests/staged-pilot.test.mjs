@@ -1,3 +1,4 @@
+import { observeAllEnvironmentForTest } from './fixtures/structured-solution.mjs';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
@@ -34,9 +35,11 @@ function viewFixture(t, engine) {
 test('stage one gates actual priorities, removes hardware minima, retains capacities and unlocked revisits', t => {
   fixture(t); assert.deepEqual(appState.selectedTasks,['TASK_1','TASK_4','TASK_5','TASK_6']);
   assert.equal(appState.canContinue(1),false); assert.equal(appState.setTaskPriority('TASK_1','thorough'),true);
-  assert.equal(appState.setStep(2),true); assert.equal(appState.setStep(3),true); assert.equal(appState.setStep(4),true);
-  assert.equal(appState.setStep(5),false); author(appState.rules[0],{sense:'SENSE_02',action:'ACT_18'});
-  assert.equal(appState.setStep(5),true); assert.equal(appState.setStep(1),true);
+  assert.equal(appState.setStep(2),true); assert.equal(appState.setStep(3),false);
+  observeAllEnvironmentForTest(appState);
+  assert.equal(appState.setStep(3),true); assert.equal(appState.setStep(4),true); assert.equal(appState.setStep(5),true);
+  assert.equal(appState.setStep(6),false); author(appState.rules[0],{sense:'SENSE_02',action:'ACT_18'});
+  assert.equal(appState.setStep(6),true); assert.equal(appState.setStep(1),true);
   for(let i=1;i<=7;i++) assert.equal(appState.toggleSensor(`SENSE_${String(i).padStart(2,'0')}`).success,true);
   assert.equal(appState.toggleSensor('SENSE_08').success,false);
   for(let i=0;i<10;i++) assert.equal(appState.toggleActuator(`module${i}`).success,true);
@@ -54,10 +57,10 @@ test('only a recorded passing formal run permits explicit stage transition and c
   assert.equal(pass.passed,true); assert.equal(appState.currentStage,1); assert.equal(appState.sessionFinished,undefined);
   formal(engine); assert.equal(engine.criteriaResults[0].status,'Not achieved'); engine.endRun('revision');
   assert.equal(appState.continueStage(),true); assert.equal(appState.currentStage,2); assert.equal(appState.currentStep,1); assert.equal(appState.unlockedStep,1);
-  assert.deepEqual(appState.selectedTasks,['TASK_1','TASK_3','TASK_4','TASK_5','TASK_6']); assert.equal(appState.rules[0].id,id);
+  assert.deepEqual(appState.selectedTasks,['TASK_1','TASK_2','TASK_4','TASK_5','TASK_6']); assert.equal(appState.rules[0].id,id);
   assert.ok(appState.installedSensors.has('SENSE_05')); assert.ok(appState.installedActuators.has('ACTUATOR_VACUUM'));
   assert.equal(appState.observationLogs[0].comment,'Keep this'); assert.equal(appState.stagePurposes[1].TASK_1.priority,'thorough');
-  assert.equal(appState.canContinue(1),false); assert.equal(appState.stageResults[1].passingRunId,pass.runId);
+  assert.equal(appState.canContinue(1),true); assert.equal(appState.stageResults[1].passingRunId,pass.runId);
   engine.reset(); assert.equal(appState.runHistory.length,2); assert.equal(appState.stageResults[1].passingRunId,pass.runId);
 });
 
@@ -71,10 +74,10 @@ test('locked rules never arbitrate, queue, count or route; priorities are separa
   assert.equal(appState.setRuleSlot(appState.rules[0].id,'priority','CTRL_03'),false);
   assert.equal(engine.evaluateRules(engine.readSensors()).taskId,'TASK_1');
   Object.assign(world.robot,{x:350,y:470,heading:0}); world.dirtCells=[];
-  appState.installedSensors.delete('SENSE_07');engine.drive({mapWet:[{x:350,y:550}],visibleObject:{x:350,y:550},SENSE_03:{target:'BIN',x:350,y:550}});
+  appState.installedSensors.delete('SENSE_07');engine.tick();
   assert.equal(world.robot.heading,0); assert.equal(engine.taskOutcomes.length,4);
-  const controls=toolbox().contents.find(c=>c.name==='Control').contents.map(b=>b.type);
-  for(const id of ['CTRL_01','CTRL_02','CTRL_03','CTRL_04','CTRL_05','CTRL_06'])assert.ok(controls.includes(id));
+  const controls=toolbox().contents.find(c=>c.name==='Control').contents.flatMap(c=>c.contents.map(b=>b.type));
+  for(const id of ['LEARNER_BEHAVIOR','controls_if','controls_repeat_ext','controls_whileUntil'])assert.ok(controls.includes(id));
 });
 
 test('fresh formal runs reset world, counters, clock and controls; pause and speed preserve them', t => {
@@ -108,7 +111,7 @@ test('reflection occurs once on a failed formal ending, never for unfinished tic
 });
 
 test('stage-aware logs and summaries preserve previous stage outcomes and factual new snapshots', t => {
-  const {engine}=fixture(t,{criteria:{1:{dirtFraction:1},2:{dirtFraction:1,spillFraction:1,maxVacuumLiquidMistakes:0}}}); const logger=new SessionLogger(appState); appState.setTaskPriority('TASK_1','speed'); appState.setTaskPurpose('TASK_1','Clean this floor');
+  const {engine}=fixture(t,{criteria:{1:{dirtFraction:1},2:{dirtFraction:1,spillFraction:1,maxVacuumLiquidMistakes:0}}}); const logger=new SessionLogger(appState); appState.setTaskPriority('TASK_1','thorough'); appState.setTaskPurpose('TASK_1','Clean this floor');
   formal(engine); engine.world.dirtCells.forEach(d=>d.cleaned=true); engine.endRun('evaluate'); appState.setClosingText('First stage reflection'); appState.continueStage();
   appState.setTaskPriority('TASK_1','thorough'); appState.setTaskPriority('TASK_3','safe'); appState.addObservation('?', 'Spill stage');
   formal(engine); engine.endRun('evaluate');
@@ -121,12 +124,15 @@ test('stage-aware logs and summaries preserve previous stage outcomes and factua
 // Cumulative physical task progression is now tested with the structured authoring fixture
 // in structured-feasibility.test.mjs, including all shared criteria and charge/release.
 
-test('learner screens offer criteria, four edit targets and no numeric score or normal 2D option; original catalog IDs and names preserved', t => {
-  const {engine}=fixture(t);const {view,panel}=viewFixture(t,engine); view.renderStep1();assert.doesNotMatch(panel.innerHTML,/type="range"|weight|All six/); assert.match(panel.innerHTML,/Speed/);
-  view.renderStep5();assert.match(panel.innerHTML,/Observed result/);assert.match(panel.innerHTML,/data-edit-step="1"/);assert.match(panel.innerHTML,/data-edit-step="4"/);assert.doesNotMatch(panel.innerHTML,/score-/);
+test('learner screens offer criteria, five edit targets and no numeric score or normal 2D option; original catalog IDs and names preserved', t => {
+  const {engine}=fixture(t);const {view,panel}=viewFixture(t,engine); view.renderStep1();assert.doesNotMatch(panel.innerHTML,/type="range"|weight|All six/); assert.match(panel.innerHTML,/Thorough cleaning/);
+  assert.doesNotMatch(panel.innerHTML,/textarea|task-reference-strip/);
+  assert.match(panel.innerHTML,/data-task-description="TASK_1"/);
+  assert.match(panel.innerHTML,/Common behaviors in every task/);
+  view.renderStep6();assert.match(panel.innerHTML,/Observed result/);assert.match(panel.innerHTML,/data-edit-step="1"/);assert.match(panel.innerHTML,/data-edit-step="5"/);assert.doesNotMatch(panel.innerHTML,/score-/);
   const html=readFileSync(new URL('../index.html',import.meta.url),'utf8');assert.doesNotMatch(html,/viewMode2DBtn|hudPeasScore|hudCoverageScore|hudSafetyScore|data-score-definition|2D Map/);
   const originals=JSON.parse(readFileSync(new URL('./fixtures/original-catalog-items.json',import.meta.url),'utf8'));
-  for(const [name,catalog]of Object.entries({tasks:TASKS_CATALOG,sensors:SENSORS_CATALOG,actuators:ACTUATORS_CATALOG,blocks:ALL_BLOCKS}))
+  for(const [name,catalog]of Object.entries({sensors:SENSORS_CATALOG,actuators:ACTUATORS_CATALOG,blocks:ALL_BLOCKS}))
     for(const item of originals[name])assert.ok(catalog.some(current=>current.id===item.id&&current.name===item.name),`${name}: ${item.id} ${item.name}`);
 });
 
@@ -142,39 +148,42 @@ test('fresh Run immediately replaces previous criterion evidence before the firs
   const {engine}=fixture(t);const {panel}=viewFixture(t,engine);
   const previousDocument=globalThis.document;globalThis.document={getElementById(){return null;}};t.after(()=>globalThis.document=previousDocument);
   new StepsView(panel,null,null);formal(engine);engine.world.dirtCells.forEach(d=>d.cleaned=true);engine.endRun('evaluate');
-  assert.match(panel.querySelector('#criterionResults').innerHTML,/17 \/ 17/);
-  formal(engine);assert.match(panel.querySelector('#criterionResults').innerHTML,/0 \/ 17/);assert.doesNotMatch(panel.querySelector('#criterionResults').innerHTML,/>Achieved</);
+  assert.match(panel.querySelector('#criterionResults').innerHTML,/data-cleaning-metric="navigation"/);assert.doesNotMatch(panel.querySelector('#criterionResults').innerHTML,/data-cleaning-metric="dirt"/);
+  formal(engine);assert.match(panel.querySelector('#criterionResults').innerHTML,/0.0% visited/);assert.doesNotMatch(panel.querySelector('#criterionResults').innerHTML,/>Achieved</);
 });
 
 test('navigation events record the actual destination with current stage and task context',t=>{
-  fixture(t);const logger=new SessionLogger(appState);appState.setTaskPriority('TASK_1','speed');appState.setStep(2);appState.setStep(3);appState.setStep(1);
+  fixture(t);const logger=new SessionLogger(appState);appState.setTaskPriority('TASK_1','thorough');appState.setStep(2);
+  observeAllEnvironmentForTest(appState);
+  appState.setStep(3);appState.setStep(4);appState.setStep(1);
   const entered=logger.events.filter(event=>event.event==='STEP_ENTERED').map(event=>JSON.parse(event.detail));
-  assert.deepEqual(entered.map(event=>[event.from,event.to]),[[1,2],[2,3],[3,1]]);
+  assert.deepEqual(entered.map(event=>[event.from,event.to]),[[1,2],[2,3],[3,4],[4,1]]);
   assert.ok(entered.every(event=>event.stageId===1&&event.taskIds.join(',')==='TASK_1,TASK_4,TASK_5,TASK_6'));
 });
 
 test('fractional cleaning criteria agree with live task status and exported completed tasks',t=>{
   const {world,engine}=fixture(t,{criteria:{1:{dirtFraction:0.5,speedLimitSeconds:null},2:{dirtFraction:0.5,sortedFraction:0.5,speedLimitSeconds:null}}});
-  const logger=new SessionLogger(appState);formal(engine);world.dirtCells.slice(0,9).forEach(cell=>cell.cleaned=true);engine.vacuumTicks=1;engine.updateOutcomes();
+  const logger=new SessionLogger(appState),cleaned=Math.ceil(world.dirtCells.length*.5);formal(engine);world.dirtCells.slice(0,cleaned).forEach(cell=>cell.cleaned=true);engine.vacuumTicks=1;engine.updateOutcomes();
   assert.equal(engine.criteriaResults[0].status,'Achieved');assert.equal(engine.taskOutcomes[0].status,'done');
-  const result=engine.endRun('evaluate');assert.equal(result.passed,true);assert.deepEqual(result.tasksCompleted,['TASK_1']);assert.equal(result.outcomes[0].summary,'Cleaned 9 of 17 dirty cells.');
+  const result=engine.endRun('evaluate');assert.equal(result.passed,true);assert.deepEqual(result.tasksCompleted,['TASK_1']);assert.equal(result.outcomes[0].summary,`Cleaned ${cleaned} of ${world.dirtCells.length} dirty cells.`);
   const exported=JSON.parse(logger.events.findLast(event=>event.event==='RUN_ENDED').detail);assert.equal(exported.outcomes[0].status,'done');assert.deepEqual(exported.tasksCompleted,['TASK_1']);
 });
 
 test('fractional spill and dirt criteria are independent of optional Speed while shared default criteria remain configured',t=>{
   const {world,engine}=fixture(t,{criteria:{1:{dirtFraction:0.5},2:{dirtFraction:0.5,spillFraction:0.5,maxVacuumLiquidMistakes:0,speedLimitSeconds:1}}});
   appState.currentStage=2;appState.selectedTasks=['TASK_1','TASK_3'];appState.stageResults[2]={passingRunId:null,closingText:''};appState.stagePurposes[2]=appState.createStagePurposes(2);
+  const cleaned=Math.ceil(world.dirtCells.length*.5);
   for(const elapsed of [0.8,1.2]){
-    formal(engine);world.dirtCells.slice(0,9).forEach(cell=>cell.cleaned=true);world.wetCells.slice(0,2).forEach(cell=>cell.cleaned=true);engine.vacuumTicks=1;engine.mopTicks=1;engine.elapsedSeconds=elapsed;engine.updateOutcomes();
+    formal(engine);world.dirtCells.slice(0,cleaned).forEach(cell=>cell.cleaned=true);world.wetCells.slice(0,2).forEach(cell=>cell.cleaned=true);engine.vacuumTicks=1;engine.mopTicks=1;engine.elapsedSeconds=elapsed;engine.updateOutcomes();
     assert.deepEqual(engine.taskOutcomes.map(outcome=>[outcome.taskId,outcome.status]),[['TASK_1','done'],['TASK_3','done']]);
     const result=engine.endRun('evaluate');assert.equal(result.passed,elapsed===0.8);assert.deepEqual(result.tasksCompleted,['TASK_1','TASK_3']);
     assert.deepEqual(result.criteria.map(criterion=>[criterion.id,criterion.status]),[['cleaning','Achieved'],['spills','Achieved'],['speed',elapsed===0.8?'Achieved':'Not achieved']]);
-    assert.equal(result.outcomes[0].summary,'Cleaned 9 of 17 dirty cells.');assert.equal(result.outcomes[1].summary,'Mopped 2 of 3 spills.');
+    assert.equal(result.outcomes[0].summary,`Cleaned ${cleaned} of ${world.dirtCells.length} dirty cells.`);assert.match(result.criteria.find(c=>c.id==='spills').observed,/2 \/ 3/);
   }
 });
 
 function sortingMemoryFixture(t){
-  const result=fixture(t);appState.currentStage=2;appState.selectedTasks=['TASK_1','TASK_2'];appState.stagePurposes[2]=appState.createStagePurposes(2);appState.stageResults[2]={passingRunId:null,closingText:''};
+  const result=fixture(t);appState.currentStage=3;appState.selectedTasks=['TASK_1','TASK_3'];appState.stagePurposes[3]=appState.createStagePurposes(3);appState.stageResults[3]={passingRunId:null,closingText:''};
   appState.installedSensors=new Set(['SENSE_15']);appState.installedActuators=new Set(['ACTUATOR_WHEELS','ACTUATOR_ROTATION']);
   return result;
 }
@@ -192,7 +201,7 @@ test('unmounted Vision cannot expose or route a remembered object position',t=>{
   const seen=engine.readSensors();assert.equal(seen.visibleObject.id,'seen');assert.equal(engine.perceivedObjects.size,1);
   appState.toggleSensor('SENSE_15');const unmounted=engine.readSensors();assert.equal(unmounted.SENSE_15,'NOT_INSTALLED');assert.equal(unmounted.rememberedObjects,undefined);
   // Even a retained pre-unmount percept cannot bypass the installed-module gate.
-  engine.drive({rememberedObjects:seen.rememberedObjects});assert.equal(world.robot.heading,0);assert.equal(world.robot.y,470);
+  engine.tick();assert.equal(world.robot.heading,0);assert.equal(world.robot.y,470);
 });
 
 test('Reset and each fresh formal Run clear Vision memory',t=>{

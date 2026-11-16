@@ -59,7 +59,7 @@ test('idempotent destination choice yields to pickup THEN while HIGH safety can 
 
 test('final combined formal gates require actual encounters, resume and low-battery selected-goal physical docking',()=>{
   const {world,engine}=fixture(3);formal(engine);world.dirtCells.forEach(d=>d.cleaned=true);world.objects.forEach(o=>o.sorted=true);world.wetCells.forEach(w=>w.cleaned=true);engine.updateOutcomes();
-  assert.deepEqual(engine.criteriaResults.map(c=>c.id),['cleaning','sorting','spills','cat','human','docking']);assert.equal(engine.criteriaResults.find(c=>c.id==='cat').status,'Not achieved');assert.equal(engine.criteriaResults.find(c=>c.id==='human').status,'Not achieved');
+  assert.deepEqual(engine.criteriaResults.map(c=>c.id),['navigation','cleaning','spills','sorting','cat','human','docking']);assert.equal(engine.criteriaResults.find(c=>c.id==='cat').status,'Not achieved');assert.equal(engine.criteriaResults.find(c=>c.id==='human').status,'Not achieved');
   appState.installedActuators.add('ACTUATOR_DOCK_PIN');Object.assign(world.robot,{x:world.dock.x,y:world.dock.y});execute(engine,'ACT_17');engine.updateOutcomes();assert.equal(engine.criteriaResults.find(c=>c.id==='docking').status,'Not achieved');assert.equal(engine.endRun().passed,false);
 });
 
@@ -71,13 +71,10 @@ test('preview restores new mapping, selected goal and encounter evidence; fresh 
 
 // The replacement three-stage structured feasibility regression is in structured-feasibility.test.mjs.
 
-test('geometry coverage route does not oscillate on a wall-tangent doorway waypoint',()=>{
+test('doorway waypoints require a student-authored route rather than a hidden planner',()=>{
   const {world,engine}=fixture();appState.installedSensors.add('SENSE_07');appState.installedActuators=new Set(['ACTUATOR_WHEELS','ACTUATOR_ROTATION']);
-  Object.assign(world.robot,{x:731.4483045761879,y:576.1809068159483,heading:0});const target={x:984,y:576};
-  for(let i=0;i<600&&Math.hypot(world.robot.x-target.x,world.robot.y-target.y)>5;i++){
-    const point=engine.routeTo(target);assert.ok(point);world.robot.heading=Math.atan2(point.y-world.robot.y,point.x-world.robot.x);engine.moveRobot();
-  }
-  assert.ok(Math.hypot(world.robot.x-target.x,world.robot.y-target.y)<5);
+  Object.assign(world.robot,{x:731.4483045761879,y:576.1809068159483,heading:0});const before={x:world.robot.x,y:world.robot.y,heading:world.robot.heading};
+  for(let i=0;i<10;i++)engine.tick();assert.deepEqual({x:world.robot.x,y:world.robot.y,heading:world.robot.heading},before);assert.equal(typeof engine.routeTo,'undefined');
 });
 
 test('unknown Map is never CLEAN; persistent coverage is not the truncated path trail',()=>{
@@ -99,19 +96,19 @@ test('animal/human conditions cannot use withheld channels; stationary robot can
 });
 
 test('clean-floor vacuum duration is factual feedback and never an invented pass gate',async()=>{
-  const {world,engine}=fixture();appState.installedActuators.add('ACTUATOR_VACUUM');Object.assign(world.robot,{x:350,y:580});execute(engine,'ACT_09');engine.tick();assert.equal(engine.cleanVacuumTicks,1);
+  const {world,engine}=fixture(2);appState.installedActuators.add('ACTUATOR_VACUUM');Object.assign(world.robot,{x:350,y:580});execute(engine,'ACT_09');engine.tick();assert.equal(engine.cleanVacuumTicks,1);
   const {StepsView}=await import('../js/view/steps-view.js');const view=Object.create(StepsView.prototype);const oldWindow=globalThis.window;globalThis.window={simEngine:engine};
   try{assert.match(view.renderCriteria(),/Vacuum on clean floor: 0.1 seconds/);assert.doesNotMatch(view.renderCriteria(),/cleanVacuum.*Not achieved/);}finally{globalThis.window=oldWindow;}
   assert.equal(engine.criteriaResults.some(c=>c.id==='cleanVacuum'),false);
 });
 
 test('stale or injected Map and Destination percepts cannot route without their mounted sensors',()=>{
-  const {world,engine}=fixture(3);appState.installedActuators=new Set(['ACTUATOR_WHEELS','ACTUATOR_ROTATION']);Object.assign(world.robot,{x:350,y:470,heading:0});
-  engine.drive({mapDirt:[{x:350,y:550}],mapWet:[{x:350,y:550}],SENSE_03:{target:'TABLE',x:350,y:550},rememberedObjects:[{x:350,y:550}]});assert.equal(world.robot.heading,0);
+  const {world,engine}=fixture(3);appState.installedActuators=new Set(['ACTUATOR_WHEELS','ACTUATOR_ROTATION']);Object.assign(world.robot,{x:350,y:470,heading:0});const before={x:world.robot.x,y:world.robot.y};
+  engine.tick();assert.deepEqual({x:world.robot.x,y:world.robot.y},before);assert.equal(typeof engine.drive,'undefined');
 });
 
 test('person criterion rejects a fast tick anywhere inside its sensed two-meter range',()=>{
-  const {world,engine}=fixture(3);appState.installedActuators=new Set(['ACTUATOR_WHEELS','ACTUATOR_ROTATION']);Object.assign(world.robot,{x:350,y:470,heading:0});Object.assign(world.avatar,{x:450,y:470});engine.tick();assert.equal(engine.humanSafetyViolations,1);
+  const {world,engine}=fixture(3);appState.installedActuators=new Set(['ACTUATOR_WHEELS','ACTUATOR_ROTATION']);Object.assign(world.robot,{x:350,y:470,heading:0});Object.assign(world.avatar,{x:450,y:470});appState.installedSensors.add('SENSE_02');rule(1,{sense:'SENSE_02',action:'ACT_01'});engine.tick();assert.equal(engine.humanSafetyViolations,1);
 });
 
 test('Map CLEAN accepts a mounted local clean observation, while unknown alone stays false',()=>{
@@ -143,7 +140,7 @@ test('UNVISITED uses a consistent physical cell even when its rounded center is 
 test('researcher LOW threshold governs sensor, LOW condition and low-battery docking evidence together',()=>{
   const {world,engine}=fixture(3);engine.criteria={...engine.criteria,3:{...engine.criteria[3],lowBatteryPercent:20}};appState.installedSensors.add('SENSE_02');world.robot.battery=25;
   let p=engine.readSensors();assert.equal(p.SENSE_02,'MED');assert.equal(engine.conditionPassed('SENSE_02','COND_08',p),false);engine.tick();assert.equal(engine.lowBatteryEncounter,false);
-  world.robot.battery=19;p=engine.readSensors();assert.equal(p.SENSE_02,'LOW');assert.equal(engine.conditionPassed('SENSE_02','COND_08',p),true);engine.tick();assert.equal(engine.lowBatteryEncounter,true);assert.match(engine.criteriaResults.find(c=>c.id==='docking').label,/Below 20%/);
+  world.robot.battery=19;p=engine.readSensors();assert.equal(p.SENSE_02,'LOW');assert.equal(engine.conditionPassed('SENSE_02','COND_08',p),true);engine.tick();assert.equal(engine.lowBatteryEncounter,true);assert.match(engine.criteriaResults.find(c=>c.id==='docking').label,/Return on low battery/);
   engine.criteria[3]={...engine.criteria[3],lowBatteryPercent:70};world.robot.battery=65;assert.equal(engine.readSensors().SENSE_02,'LOW');
 });
 

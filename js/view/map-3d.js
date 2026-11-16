@@ -3,8 +3,8 @@ import { translate, onLanguageChange } from '../i18n.js';
  * CollabPEAS - 3D 360-Degree Interactive Apartment Map Engine
  * Powered by Three.js WebGL and Materials/Apartment.glb.
  * Features 360° OrbitControls, First-Person 360° Walkthrough,
- * 3D Holographic Stations, 3D Dynamic Robot with Sonar, 3D Roaming Cat NPC,
- * 3D Operator Avatar, Floor Decals, and Raycasting Interaction.
+ * Physical household objects, a cleaning robot, a roaming cat and operator,
+ * floor cleaning targets, and optional Environment observation labels.
  */
 
 import * as THREE from '../../lib/three/three.module.js';
@@ -12,13 +12,16 @@ import { GLTFLoader } from '../../lib/three/GLTFLoader.js';
 import { OrbitControls } from '../../lib/three/OrbitControls.js';
 import { appState } from '../state.js';
 import { getRobotCameraPose } from './pov-renderer.js';
+import { apartmentCollision } from '../sim/apartment-collision-data.js';
+import { applyApartmentLayout } from './apartment-model-layout.js';
+const objectLabel = object => object.type==='CUP'?'Mug':object.type==='FOOD'?'Food bowl':object.id==='TRASH_1'?'Paper':'Can';
 
 export class Apartment3DMap {
   constructor(canvasElement, world) {
     this.canvas = canvasElement;
     this.world = world;
 
-    // View Modes: 'orbit' | 'fps' (player walkthrough) | 'robot' (robot camera) | 'topDown'
+    // View Modes: 'orbit' | 'fps' | 'thirdPerson' (player walkthrough) | 'robot' | 'topDown'
     this.viewMode = 'orbit';
     this.isAutoSpinning = false;
     this.modelLoaded = false;
@@ -30,9 +33,8 @@ export class Apartment3DMap {
     this.prevMousePos = { x: 0, y: 0 };
     this.keys = { w: false, a: false, s: false, d: false, ArrowUp: false, ArrowDown: false, ArrowLeft: false, ArrowRight: false };
 
-    // Station holographic rings & click targets
-    this.stationObjects = [];
-    this.hoveredStation = null;
+    this.environmentObservation = false;
+    this.environmentLabels = [];
 
     // Raycaster for mouse interaction
     this.raycaster = new THREE.Raycaster();
@@ -43,12 +45,12 @@ export class Apartment3DMap {
     this.initControls();
     this.initEntities();
     this.createInspectionObjects();
+    this.createEnvironmentLabels();
     this.loadApartmentModel();
     this.bindEvents();
     this.startLoop();
     onLanguageChange(() => {
       this.scene.traverse(object => object.userData.repaintLabel?.());
-      this.updateRobotActionSprite(this.lastRobotCaption || '⚙️ READY • 🔋 100%');
     });
   }
 
@@ -208,7 +210,8 @@ export class Apartment3DMap {
       (gltf) => {
         clearTimeout(safetyTimer);
         try {
-          this.apartmentModel = gltf.scene;
+          gltf.scene.getObjectByName('Robotic_Lawn_Mower_Station_spec_02')?.removeFromParent();
+          this.apartmentModel = applyApartmentLayout(gltf.scene);
           this.apartmentModel.position.set(0, 0, 0);
 
           // Keep textures while lifting the original near-black furniture finishes.
@@ -298,133 +301,14 @@ export class Apartment3DMap {
   // 4. INTERACTIVE 3D ENTITIES (Stations, Robot, Cat, Avatar, Decals)
   // -------------------------------------------------------------
   initEntities() {
-    this.create3DStations();
     this.create3DRobot();
     this.create3DCat();
     this.create3DAvatar();
     this.createFloorDecals();
   }
 
-  create3DStations() {
-    const STATIONS_DEF = [
-      { step: 1, name: '1. Purpose & Metrics', x2d: 450, y2d: 380, icon: '🎯', color: 0x38bdf8 },
-      { step: 2, name: '2. Sensors Workbench', x2d: 340, y2d: 820, icon: '📡', color: 0x0284c7 },
-      { step: 3, name: '3. Actuator Bay', x2d: 350, y2d: 480, icon: '🦾', color: 0x10b981 },
-      { step: 4, name: '4. Decision Logic', x2d: 600, y2d: 860, icon: '🧩', color: 0xf59e0b },
-      { step: 5, name: '5. Observation & Debug', x2d: 880, y2d: 860, icon: '🔬', color: 0xa855f7 }
-    ];
-
-    STATIONS_DEF.forEach(st => {
-      const safe = this.world.nearestWalkable(st.x2d, st.y2d, 24);
-      const pos = this.to3D(safe.x, safe.y, 0.12);
-
-      const group = new THREE.Group();
-      group.position.copy(pos);
-      group.userData = { step: st.step, name: st.name, isStation: true };
-
-      // Ground Holographic Ring
-      const ringGeom = new THREE.TorusGeometry(0.75, 0.045, 16, 48);
-      ringGeom.rotateX(Math.PI / 2);
-      const ringMat = new THREE.MeshStandardMaterial({
-        color: st.color,
-        emissive: st.color,
-        emissiveIntensity: 0.6,
-        roughness: 0.2
-      });
-      const ringMesh = new THREE.Mesh(ringGeom, ringMat);
-      group.add(ringMesh);
-
-      // Vertical Soft Glowing Light Column
-      const colGeom = new THREE.CylinderGeometry(0.7, 0.7, 1.8, 32, 1, true);
-      colGeom.translate(0, 0.9, 0);
-      const colMat = new THREE.MeshBasicMaterial({
-        color: st.color,
-        transparent: true,
-        opacity: 0.16,
-        side: THREE.DoubleSide,
-        depthWrite: false
-      });
-      const colMesh = new THREE.Mesh(colGeom, colMat);
-      group.add(colMesh);
-
-      // Overhead 3D Billboard Sprite
-      const sprite = this.createStationBillboard(st.icon, st.name, st.color);
-      sprite.position.set(0, 2.2, 0);
-      group.add(sprite);
-
-      this.scene.add(group);
-      this.stationObjects.push({ group, ringMesh, colMesh, sprite, def: st });
-    });
-  }
-
-  createStationBillboard(icon, text, colorHex) {
-    const canvas = document.createElement('canvas');
-    canvas.width = 512;
-    canvas.height = 160;
-    const ctx = canvas.getContext('2d');
-
-    const paint = () => {
-      ctx.clearRect(0, 0, canvas.width, canvas.height);
-      // Background pill
-      ctx.fillStyle = 'rgba(255, 255, 255, 0.96)';
-      ctx.strokeStyle = `#${colorHex.toString(16).padStart(6, '0')}`;
-      ctx.lineWidth = 6;
-      ctx.beginPath();
-      ctx.roundRect(16, 16, 480, 128, 28);
-      ctx.fill();
-      ctx.stroke();
-
-      // Icon & Text
-      ctx.font = '54px sans-serif';
-      ctx.textAlign = 'left';
-      ctx.fillText(icon, 36, 102);
-
-      ctx.fillStyle = '#1e293b';
-      ctx.font = 'bold 36px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
-      ctx.fillText(translate(text), 110, 96);
-    };
-    paint();
-
-    const texture = new THREE.CanvasTexture(canvas);
-    texture.colorSpace = THREE.SRGBColorSpace;
-    texture.minFilter = THREE.LinearFilter;
-    const spriteMat = new THREE.SpriteMaterial({ map: texture, depthTest: true, depthWrite: false, toneMapped: false });
-    const sprite = new THREE.Sprite(spriteMat);
-    sprite.userData.repaintLabel = () => { paint(); texture.needsUpdate = true; };
-    sprite.scale.set(2.4, 0.75, 1);
-    return sprite;
-  }
-
   create3DRobot() {
     this.robotGroup = new THREE.Group();
-
-    // 1. Lower Pulsing Ground Halo Disc (ensures high visibility from high camera angles)
-    const groundGeom = new THREE.RingGeometry(0.60, 0.82, 36);
-    groundGeom.rotateX(-Math.PI / 2);
-    this.robotGroundMat = new THREE.MeshBasicMaterial({
-      color: 0x38bdf8,
-      transparent: true,
-      opacity: 0.65,
-      side: THREE.DoubleSide,
-      depthWrite: false
-    });
-    this.robotGroundBeacon = new THREE.Mesh(groundGeom, this.robotGroundMat);
-    this.robotGroundBeacon.position.y = -0.11;
-    this.robotGroup.add(this.robotGroundBeacon);
-
-    // 2. Vertical Holographic Target Column (Beacon Beam)
-    const beamGeom = new THREE.CylinderGeometry(0.38, 0.38, 1.8, 24, 1, true);
-    beamGeom.translate(0, 0.9, 0);
-    this.robotBeamMat = new THREE.MeshBasicMaterial({
-      color: 0x38bdf8,
-      transparent: true,
-      opacity: 0.25,
-      side: THREE.DoubleSide,
-      depthWrite: false
-    });
-    this.robotBeam = new THREE.Mesh(beamGeom, this.robotBeamMat);
-    this.robotBeam.renderOrder = 8888;
-    this.robotGroup.add(this.robotBeam);
 
     // 3. Main Metallic Chassis Body
     const bodyGeom = new THREE.CylinderGeometry(0.48, 0.50, 0.20, 36);
@@ -500,84 +384,12 @@ export class Apartment3DMap {
     bumper.position.set(0, 0.03, 0.44);
     this.robotGroup.add(bumper);
 
-    // 9. Overhead High-Visibility Billboard (Elevated & Rendered on top of everything)
-    this.robotActionSprite = this.createRobotActionSprite('⚙️ READY • 🔋 100%');
-    this.robotActionSprite.position.set(0, 1.30, 0);
-    this.robotGroup.add(this.robotActionSprite);
-
     // Immediately position the robot group at world coordinates
     const initPos = this.to3D(this.world.robot.x, this.world.robot.y, 0.24);
     this.robotGroup.position.copy(initPos);
     this.robotGroup.rotation.y = -this.world.robot.heading + Math.PI / 2;
 
     this.scene.add(this.robotGroup);
-  }
-
-  createRobotActionSprite(actionText) {
-    const canvas = document.createElement('canvas');
-    canvas.width = 440;
-    canvas.height = 110;
-    const ctx = canvas.getContext('2d');
-
-    ctx.fillStyle = 'rgba(255, 255, 255, 0.96)';
-    ctx.strokeStyle = '#38bdf8';
-    ctx.lineWidth = 4;
-    ctx.beginPath();
-    ctx.roundRect(8, 8, 424, 94, 18);
-    ctx.fill();
-    ctx.stroke();
-
-    ctx.fillStyle = '#1e293b';
-    ctx.font = 'bold 24px -apple-system, sans-serif';
-    ctx.textAlign = 'center';
-    ctx.fillText(translate('🤖 CLEANING ROBOT'), 220, 42);
-
-    ctx.fillStyle = '#166534';
-    ctx.font = 'bold 22px -apple-system, sans-serif';
-    ctx.fillText(translate(actionText), 220, 80);
-
-    const texture = new THREE.CanvasTexture(canvas);
-    texture.colorSpace = THREE.SRGBColorSpace;
-    const spriteMat = new THREE.SpriteMaterial({
-      map: texture,
-      depthTest: true,
-      depthWrite: false,
-      toneMapped: false,
-      transparent: true
-    });
-    const sprite = new THREE.Sprite(spriteMat);
-    sprite.scale.set(2.6, 0.65, 1);
-    sprite.renderOrder = 9999;
-    sprite.canvas = canvas;
-    sprite.ctx = ctx;
-    sprite.texture = texture;
-    return sprite;
-  }
-
-  updateRobotActionSprite(text) {
-    this.lastRobotCaption = text;
-    if (!this.robotActionSprite) return;
-    const { canvas, ctx, texture } = this.robotActionSprite;
-    ctx.clearRect(0, 0, canvas.width, canvas.height);
-
-    ctx.fillStyle = 'rgba(255, 255, 255, 0.96)';
-    ctx.strokeStyle = '#38bdf8';
-    ctx.lineWidth = 4;
-    ctx.beginPath();
-    ctx.roundRect(8, 8, 424, 94, 18);
-    ctx.fill();
-    ctx.stroke();
-
-    ctx.fillStyle = '#1e293b';
-    ctx.font = 'bold 24px -apple-system, sans-serif';
-    ctx.textAlign = 'center';
-    ctx.fillText(translate('🤖 CLEANING ROBOT'), 220, 42);
-
-    ctx.fillStyle = '#166534';
-    ctx.font = 'bold 22px -apple-system, sans-serif';
-    ctx.fillText(translate(text), 220, 80);
-
-    texture.needsUpdate = true;
   }
 
   create3DCat() {
@@ -639,130 +451,137 @@ export class Apartment3DMap {
     head.castShadow = true;
     this.avatarGroup.add(head);
 
-    // 360° Direction Arrow on Floor
-    const arrowGeom = new THREE.ConeGeometry(0.22, 0.5, 16);
-    arrowGeom.rotateX(Math.PI / 2);
-    const arrowMat = new THREE.MeshBasicMaterial({ color: 0x38bdf8 });
-    const arrow = new THREE.Mesh(arrowGeom, arrowMat);
-    arrow.position.set(0, 0.05, 0.6);
-    this.avatarGroup.add(arrow);
-
     this.scene.add(this.avatarGroup);
   }
 
   createInspectionObjects() {
-    const bin=this.world.smartBin;
-    const body=new THREE.Mesh(new THREE.BoxGeometry(0.55,0.55,0.55),new THREE.MeshStandardMaterial({color:0x64748b}));
-    body.position.copy(this.to3D(bin.x,bin.y,0.3));
-    const lid=new THREE.Mesh(new THREE.BoxGeometry(0.6,0.06,0.6),new THREE.MeshStandardMaterial({color:0x22c55e}));
-    lid.name='smart-bin-lid';
-    lid.position.copy(this.to3D(bin.x,bin.y,0.61));
-    this.binLid=lid;
-    this.scene.add(body,lid);
-    const table=new THREE.Mesh(new THREE.BoxGeometry(0.8,0.15,0.6),new THREE.MeshStandardMaterial({color:0xa16207}));
-    table.position.copy(this.to3D(this.world.depositTable.x,this.world.depositTable.y,0.4));
-    this.scene.add(table);
-
-    this.inspectionObjects = this.world.inspectionTags.map(tag => {
-      const marker = new THREE.Mesh(new THREE.SphereGeometry(0.18, 16, 12), new THREE.MeshBasicMaterial({ color: 0x38bdf8 }));
-      marker.position.copy(this.to3D(tag.x, tag.y, 0.65));
-      marker.userData.tag = tag;
-      const label = this.createWorldLabel(tag.text);
-      label.position.copy(this.to3D(tag.x, tag.y, 1.05));
-      label.visible = false;
-      this.scene.add(marker, label);
-      return { tag, marker, label };
-    });
-    this.scatteredObjects = this.world.objects.map(object => {
-      const mesh = new THREE.Mesh(new THREE.BoxGeometry(0.25, 0.18, 0.25), new THREE.MeshStandardMaterial({ color: object.type === 'TRASH' ? 0xf43f5e : 0x10b981 }));
-      const label = this.createStationBillboard(object.icon, object.name, 0x38bdf8);
-      label.scale.set(1.4, 0.44, 1);
-      this.scene.add(mesh, label);
-      return { object, mesh, label };
+    this.chargingDock=new THREE.Group();
+    const dockMaterial=new THREE.MeshStandardMaterial({color:0x5d6876,roughness:.65});
+    const back=new THREE.Mesh(new THREE.BoxGeometry(.55,.38,.08),dockMaterial);back.position.set(0,.19,-.16);
+    const pad=new THREE.Mesh(new THREE.BoxGeometry(.55,.025,.35),dockMaterial);pad.position.y=.012;
+    const contacts=new THREE.Mesh(new THREE.BoxGeometry(.2,.035,.1),new THREE.MeshStandardMaterial({color:0xcbd5e1,metalness:.7}));contacts.position.set(0,.035,-.05);
+    this.chargingDock.add(back,pad,contacts);this.chargingDock.position.copy(this.to3D(this.world.dock.x,this.world.dock.y,.11));
+    this.scene.add(this.chargingDock);
+    this.scatteredObjects=this.world.objects.map(object=>{
+      const kind=objectLabel(object),mesh=new THREE.Group();
+      const material=color=>new THREE.MeshStandardMaterial({color,roughness:.6});
+      if(kind==='Paper') {
+        const rim=[[-.17,.005,-.11],[-.04,.035,-.16],[.14,.015,-.09],[.17,.03,.09],[0,.005,.15],[-.14,.03,.1]],vertices=[];
+        rim.forEach((point,i)=>vertices.push(0,.065,0,...point,...rim[(i+1)%rim.length]));
+        const geometry=new THREE.BufferGeometry();geometry.setAttribute('position',new THREE.Float32BufferAttribute(vertices,3));geometry.computeVertexNormals();
+        mesh.add(new THREE.Mesh(geometry,new THREE.MeshStandardMaterial({color:0xf2eee4,roughness:.95,side:THREE.DoubleSide,flatShading:true})));
+        const creases=new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(...rim[0]),new THREE.Vector3(0,.067,0),new THREE.Vector3(...rim[3])]);
+        mesh.add(new THREE.Line(creases,new THREE.LineBasicMaterial({color:0xada89f})));
+      } else if(kind==='Can') {
+        const body=new THREE.Mesh(new THREE.CylinderGeometry(.09,.09,.25,20),material(0xe05d50));body.position.y=.13;
+        const cap=new THREE.Mesh(new THREE.CylinderGeometry(.092,.092,.012,20),material(0xcbd5e1));cap.position.y=.26;
+        const tab=new THREE.Mesh(new THREE.BoxGeometry(.055,.012,.025),material(0x66717c));tab.position.y=.272;
+        mesh.add(body,cap,tab);
+      } else if(kind==='Mug') {
+        const points=[[0,0],[.1,0],[.12,.035],[.12,.22],[.095,.22],[.095,.045],[0,.045]].map(([x,y])=>new THREE.Vector2(x,y));
+        mesh.add(new THREE.Mesh(new THREE.LatheGeometry(points,24),material(0xf2f4ef)));
+        const handle=new THREE.Mesh(new THREE.TorusGeometry(.075,.018,8,20),material(0xf2f4ef));handle.position.set(.13,.12,0);mesh.add(handle);
+      } else {
+        const points=[[0,0],[.12,0],[.17,.1],[.145,.1],[.105,.025],[0,.025]].map(([x,y])=>new THREE.Vector2(x,y));
+        mesh.add(new THREE.Mesh(new THREE.LatheGeometry(points,24),material(0x4c91bd)));
+        const food=new THREE.Mesh(new THREE.CylinderGeometry(.115,.105,.025,18),material(0x84603d));food.position.y=.05;mesh.add(food);
+      }
+      mesh.traverse(child=>{if(child.isMesh)child.castShadow=true;});
+      mesh.position.copy(this.to3D(object.x,object.y,.12));this.scene.add(mesh);
+      return {object,mesh,kind};
     });
   }
 
   createWorldLabel(text) {
-    const canvas = document.createElement('canvas');
-    canvas.width = 2048;
-    canvas.height = 96;
-    const context = canvas.getContext('2d');
-    const paint = () => {
-      context.clearRect(0, 0, canvas.width, canvas.height);
-      context.fillStyle = 'rgba(255,255,255,0.96)';
-      context.fillRect(0, 0, canvas.width, canvas.height);
-      context.font = '30px sans-serif';
-      context.fillStyle = '#854d0e';
-      context.textAlign = 'center';
-      context.fillText(translate(text), 1024, 58, 2000);
+    const canvas=document.createElement('canvas');canvas.height=64;
+    const context=canvas.getContext('2d');
+    context.font='bold 30px -apple-system, BlinkMacSystemFont, sans-serif';
+    const captions=[text,`✓ ${text}`,translate(text,'zh-CN'),`✓ ${translate(text,'zh-CN')}`];
+    // Uploaded WebGL texture storage keeps the same dimensions across repaints.
+    canvas.width=Math.ceil(Math.max(...captions.map(caption=>context.measureText(caption).width))+28);
+    let observed=false;
+    const paint=()=>{
+      context.font='bold 30px -apple-system, BlinkMacSystemFont, sans-serif';
+      const caption=(observed?'✓ ':'')+translate(text);
+      context.clearRect(0,0,canvas.width,canvas.height);
+      context.fillStyle=observed?'#dcfce7':'rgba(255,255,255,.96)';context.strokeStyle=observed?'#16a34a':'#71879c';context.lineWidth=2;
+      context.beginPath();context.roundRect(2,2,canvas.width-4,60,12);context.fill();context.stroke();
+      context.font='bold 30px -apple-system, BlinkMacSystemFont, sans-serif';context.fillStyle=observed?'#166534':'#263c4c';context.textAlign='center';
+      context.fillText(caption,canvas.width/2,43);
     };
     paint();
-    const texture = new THREE.CanvasTexture(canvas);
-    texture.colorSpace = THREE.SRGBColorSpace;
-    const label = new THREE.Sprite(new THREE.SpriteMaterial({ map: texture, depthTest: false, toneMapped: false }));
-    label.userData.repaintLabel = () => { paint(); texture.needsUpdate = true; };
-    label.scale.set(7.5, 0.35, 1);
+    const texture=new THREE.CanvasTexture(canvas);texture.colorSpace=THREE.SRGBColorSpace;
+    const label=new THREE.Sprite(new THREE.SpriteMaterial({map:texture,depthTest:true,depthWrite:false,toneMapped:false,transparent:true}));
+    label.userData.environmentLabel=text;label.userData.aspect=canvas.width/canvas.height;label.userData.observed=false;
+    label.userData.repaintLabel=()=>{paint();label.userData.aspect=canvas.width/canvas.height;texture.needsUpdate=true;};
+    label.userData.setObserved=value=>{const next=Boolean(value);if(next===observed)return;observed=next;label.userData.observed=next;label.userData.repaintLabel();};
     return label;
   }
 
-  inspectTag(tag) {
-    this.selectedTag = tag;
-    appState.recordHotspot?.(tag.id, this.viewMode === 'fps' ? 'fps' : '3d');
+  createEnvironmentLabels() {
+    const items=[
+      ...this.world.dirtCells.map(entity=>({entity,kind:'dirt',text:'Dirt',height:.45})),
+      ...this.world.wetCells.map(entity=>({entity,kind:'spill',text:'Spill',height:.45})),
+      ...this.world.objects.map(entity=>({entity,kind:'object',text:objectLabel(entity),height:.55})),
+      {entity:this.world.dock,kind:'dock',text:'Charging dock',height:.65},
+      {entity:this.world.cat,kind:'cat',text:'Cat',height:.85},
+      {entity:this.world.avatar,kind:'person',text:'Person',height:1.8}
+    ];
+    this.environmentLabels=items.map(item=>{const label=this.createWorldLabel(item.text),targetId=item.entity.id||{dock:'DOCK',cat:'CAT',person:'PERSON'}[item.kind];label.userData.environmentTarget=targetId;this.scene.add(label);return {...item,targetId,label};});
+    this.updateEnvironmentLabels();
+  }
+
+  setEnvironmentObservation(active) {
+    this.environmentObservation=Boolean(active);
+    this.updateEnvironmentLabels();
+  }
+
+  updateEnvironmentLabels() {
+    const visible=this.environmentObservation&&this.viewMode!=='robot'&&!appState.isRobotPovActive;
+    for(const {entity,kind,targetId,label,height} of this.environmentLabels||[]) {
+      label.userData.setObserved?.(appState.observedEnvironmentTargets?.has(targetId));
+      label.position.copy(this.to3D(entity.x,entity.y,height));
+      label.visible=Boolean(visible&&!((kind==='dirt'||kind==='spill')&&entity.cleaned)&&!(kind==='object'&&(entity.carried||entity.disposed||entity.sorted)));
+    }
   }
 
   updateInspectionObjects() {
-    if(this.binLid)this.binLid.rotation.x=this.world.smartBin.isOpen?-Math.PI/2:0;
-    const avatar = this.world.avatar;
-    const nearby = this.world.inspectionTags.find(tag => Math.hypot(avatar.x - tag.x, avatar.y - tag.y) < 65);
-    if (['3d', 'fps'].includes(window.currentViewMode) && nearby && nearby !== this.nearbyTag) this.inspectTag(nearby);
-    this.nearbyTag = nearby;
-    for (const { tag, marker, label } of this.inspectionObjects) {
-      marker.visible = this.viewMode !== 'robot';
-      label.visible = this.viewMode !== 'robot' && (tag === nearby || tag === this.selectedTag);
+    for(const {object,mesh} of this.scatteredObjects||[]) {
+      mesh.visible=!object.disposed&&!object.sorted;
+      mesh.position.copy(this.to3D(object.x,object.y,object.carried?.55:.12));
     }
-    for (const { object, mesh, label } of this.scatteredObjects) {
-      mesh.visible = label.visible = !object.disposed;
-      mesh.position.copy(this.to3D(object.x, object.y, object.carried ? 0.55 : 0.18));
-      label.position.copy(this.to3D(object.x, object.y, 0.6));
-      label.visible = !object.disposed && this.viewMode !== 'robot';
-    }
+    this.updateEnvironmentLabels();
   }
 
   createFloorDecals() {
-    this.dirtDecals = [];
-    this.wetDecals = [];
-
-    // Dirt spots
-    const dirtGeom = new THREE.CircleGeometry(0.28, 16);
-    dirtGeom.rotateX(-Math.PI / 2);
-    const dirtMat = new THREE.MeshStandardMaterial({ color: 0x451a03, roughness: 0.9 });
-
-    this.world.dirtCells.forEach(d => {
-      const pos = this.to3D(d.x, d.y, 0.11);
-      const mesh = new THREE.Mesh(dirtGeom, dirtMat);
-      mesh.position.copy(pos);
-      this.scene.add(mesh);
-      this.dirtDecals.push({ cell: d, mesh });
-    });
-
-    // Wet spills
-    const wetGeom = new THREE.CircleGeometry(0.48, 24);
-    wetGeom.rotateX(-Math.PI / 2);
-    const wetMat = new THREE.MeshStandardMaterial({
-      color: 0x38bdf8,
-      transparent: true,
-      opacity: 0.65,
-      roughness: 0.1,
-      metalness: 0.3
-    });
-
-    this.world.wetCells.forEach(w => {
-      const pos = this.to3D(w.x, w.y, 0.115);
-      const mesh = new THREE.Mesh(wetGeom, wetMat);
-      mesh.position.copy(pos);
-      this.scene.add(mesh);
-      this.wetDecals.push({ cell: w, mesh });
-    });
+    this.dirtDecals=[];this.wetDecals=[];
+    const canvas=document.createElement('canvas');canvas.width=canvas.height=256;
+    const context=canvas.getContext('2d');context.clearRect(0,0,256,256);
+    for(let i=0;i<64;i++) {
+      const seed=Math.sin((i+1)*127.1)*43758.5453;
+      const angle=i*2.39996,distance=Math.sqrt(seed-Math.floor(seed))*106;
+      context.fillStyle=['#e5dac5','#c5bcae','#807b73'][i%3];
+      context.beginPath();context.ellipse(128+Math.cos(angle)*distance,128+Math.sin(angle)*distance,2+i%5,1+i%3,angle,0,Math.PI*2);context.fill();
+    }
+    const dustTexture=new THREE.CanvasTexture(canvas);dustTexture.colorSpace=THREE.SRGBColorSpace;
+    const dirtGeometry=new THREE.PlaneGeometry(.65,.58);dirtGeometry.rotateX(-Math.PI/2);
+    const dirtMaterial=new THREE.MeshBasicMaterial({map:dustTexture,transparent:true,alphaTest:.04,depthWrite:false});
+    for(const cell of this.world.dirtCells) {
+      const mesh=new THREE.Mesh(dirtGeometry,dirtMaterial);mesh.position.copy(this.to3D(cell.x,cell.y,.115));mesh.scale.setScalar(cell.radius/12);
+      this.scene.add(mesh);this.dirtDecals.push({cell,mesh});
+    }
+    const outline=[[.42,0],[.35,.22],[.12,.32],[-.12,.26],[-.38,.16],[-.45,-.08],[-.16,-.27],[.12,-.3],[.36,-.15]];
+    const shape=new THREE.Shape();shape.moveTo((outline.at(-1)[0]+outline[0][0])/2,(outline.at(-1)[1]+outline[0][1])/2);
+    outline.forEach(([x,y],i)=>{const next=outline[(i+1)%outline.length];shape.quadraticCurveTo(x,y,(x+next[0])/2,(y+next[1])/2);});shape.closePath();
+    const waterGeometry=new THREE.ShapeGeometry(shape);waterGeometry.rotateX(-Math.PI/2);
+    const waterMaterial=new THREE.MeshStandardMaterial({color:0x25bad4,transparent:true,opacity:.72,roughness:.12,metalness:.12,depthWrite:false});
+    const glintGeometry=new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(-.22,.006,-.06),new THREE.Vector3(-.11,.006,-.12),new THREE.Vector3(.03,.006,-.13)]);
+    const glintMaterial=new THREE.LineBasicMaterial({color:0xe7fcff,transparent:true,opacity:.95});
+    for(const cell of this.world.wetCells) {
+      const mesh=new THREE.Group();mesh.add(new THREE.Mesh(waterGeometry,waterMaterial),new THREE.Line(glintGeometry,glintMaterial));
+      mesh.position.copy(this.to3D(cell.x,cell.y,.12));mesh.scale.setScalar(cell.radius/24);
+      this.scene.add(mesh);this.wetDecals.push({cell,mesh});
+    }
   }
 
   // -------------------------------------------------------------
@@ -778,7 +597,7 @@ export class Apartment3DMap {
       this.mouse.x = ((e.clientX - rect.left) / rect.width) * 2 - 1;
       this.mouse.y = -((e.clientY - rect.top) / rect.height) * 2 + 1;
 
-      if (this.viewMode === 'fps' && this.isMouseDown) {
+      if ((this.viewMode === 'fps' || this.viewMode === 'thirdPerson') && this.isMouseDown) {
         const dx = e.clientX - this.prevMousePos.x;
         const dy = e.clientY - this.prevMousePos.y;
         this.fpsYaw -= dx * 0.004;
@@ -787,7 +606,6 @@ export class Apartment3DMap {
         return;
       }
 
-      this.checkStationHover();
     });
 
     this.canvas.addEventListener('mousedown', (e) => {
@@ -801,7 +619,7 @@ export class Apartment3DMap {
 
     // Mouse Click (Raycast Station click or floor click to move avatar)
     this.canvas.addEventListener('click', (e) => {
-      if (this.viewMode === 'robot') return;
+      if (this.viewMode === 'robot' || this.viewMode === 'thirdPerson') return;
 
       const rect = this.canvas.getBoundingClientRect();
       this.mouse.x = ((e.clientX - rect.left) / rect.width) * 2 - 1;
@@ -809,26 +627,7 @@ export class Apartment3DMap {
 
       this.raycaster.setFromCamera(this.mouse, this.camera);
 
-      const hit = this.raycaster.intersectObjects(this.inspectionObjects.map(item => item.marker), false)[0];
-      if (hit) {
-        this.inspectTag(hit.object.userData.tag);
-        return;
-      }
       if (this.viewMode === 'fps') return;
-
-      // 1. Check Station Ring Click
-      const intersects = this.raycaster.intersectObjects(
-        this.stationObjects.map(s => s.ringMesh).concat(this.stationObjects.map(s => s.colMesh)),
-        false
-      );
-
-      if (intersects.length > 0) {
-        const parent = intersects[0].object.parent;
-        if (parent && parent.userData.step) {
-          (window.navigateStep || window.openStepModal)?.(parent.userData.step);
-          return;
-        }
-      }
 
       // 2. Check Click on Floor to Move Operator Avatar
       const groundPlane = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0);
@@ -844,7 +643,8 @@ export class Apartment3DMap {
     window.addEventListener('keydown', (e) => {
       if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return;
       const modal = document.getElementById('stepModalOverlay');
-      if (modal && modal.style.display !== 'none') return;
+      if (modal && modal.style.display !== 'none' &&
+          !(modal.classList.contains('workstation-layout') && e.target === this.canvas)) return;
 
       if (this.viewMode === 'robot') return;
       const k = e.key.toLowerCase();
@@ -857,26 +657,6 @@ export class Apartment3DMap {
       if (this.keys.hasOwnProperty(e.key)) this.keys[e.key] = false;
       if (this.keys.hasOwnProperty(k)) this.keys[k] = false;
     });
-  }
-
-  checkStationHover() {
-    this.raycaster.setFromCamera(this.mouse, this.camera);
-    const intersects = this.raycaster.intersectObjects(
-      this.stationObjects.map(s => s.ringMesh).concat(this.stationObjects.map(s => s.colMesh)),
-      false
-    );
-
-    if (intersects.length > 0) {
-      const parent = intersects[0].object.parent;
-      if (parent && parent.userData.step) {
-        this.hoveredStation = parent.userData.step;
-        this.canvas.style.cursor = 'pointer';
-        return;
-      }
-    }
-
-    this.hoveredStation = null;
-    this.canvas.style.cursor = 'default';
   }
 
   onResize() {
@@ -892,6 +672,7 @@ export class Apartment3DMap {
   // 6. 360-DEGREE VIEW MODES & HEADING CONTROL
   // -------------------------------------------------------------
   setViewMode(mode) {
+    const previousMode = this.viewMode;
     this.cameraAnimationId = (this.cameraAnimationId || 0) + 1;
     this.viewMode = mode;
     this.updateViewPresentation();
@@ -899,6 +680,7 @@ export class Apartment3DMap {
     if (mode === 'orbit') {
       this.controls.enabled = true;
       this.controls.autoRotate = false;
+      this.controls.maxDistance = 35;
       this.animateCameraTo(new THREE.Vector3(4, 14, 18), new THREE.Vector3(3.5, 0.5, 0));
     } else if (mode === 'robot') {
       this.controls.enabled = false;
@@ -914,38 +696,63 @@ export class Apartment3DMap {
       this.camera.position.copy(avatarPos);
       this.fpsYaw = Math.atan2(Math.cos(this.world.avatar.heading), Math.sin(this.world.avatar.heading));
       this.fpsPitch = 0;
+    } else if (mode === 'thirdPerson') {
+      this.controls.enabled = false;
+      this.controls.autoRotate = false;
+      this.isFollowingRobot = false;
+      this.isAutoSpinning = false;
+      this.camera.near = .1;
+      this.camera.updateProjectionMatrix();
+      if (previousMode !== 'fps' && previousMode !== 'thirdPerson') {
+        this.fpsYaw = Math.atan2(Math.cos(this.world.avatar.heading), Math.sin(this.world.avatar.heading));
+        this.fpsPitch = 0;
+      }
+      this.updateThirdPersonCamera();
     } else if (mode === 'topDown') {
       this.controls.enabled = true;
       this.animateCameraTo(new THREE.Vector3(3.5, 22, 0.1), new THREE.Vector3(3.5, 0, 0));
     }
   }
 
-  updateViewPresentation() {
-    const firstPerson = this.viewMode === 'fps' || this.viewMode === 'robot';
-    const fov = firstPerson ? 78 : 48;
-    if (this.camera.fov !== fov) {
-      this.camera.fov = fov;
-      this.camera.updateProjectionMatrix();
+  viewWholeApartment() {
+    if(this.viewMode==='robot')return;
+    this.cameraAnimationId=(this.cameraAnimationId||0)+1;
+    const bounds=this.apartmentModel?new THREE.Box3().setFromObject(this.apartmentModel):new THREE.Box3();
+    if(bounds.isEmpty())for(const [x,y,x1,y1] of apartmentCollision.floors) {
+      bounds.expandByPoint(this.to3D(x,y,0));bounds.expandByPoint(this.to3D(x1,y1,3.2));
     }
-    if (this.avatarGroup) this.avatarGroup.visible = this.viewMode !== 'fps';
-    this.camera.updateMatrixWorld();
-    const resizeLabel = (sprite, width, height, maxPixels) => {
-      if (!sprite) return;
-      let scale = 1;
-      if (firstPerson) {
-        const position = sprite.getWorldPosition(new THREE.Vector3());
-        const distance = Math.max(0.01, -position.applyMatrix4(this.camera.matrixWorldInverse).z);
-        const visibleHeight = 2 * distance * Math.tan(THREE.MathUtils.degToRad(fov/2));
-        scale = Math.min(1, maxPixels * visibleHeight / (Math.max(1,this.canvas.clientHeight) * width));
-      }
-      sprite.scale.set(width*scale,height*scale,1);
-    };
-    for (const station of this.stationObjects) {
-      station.colMesh.visible = !firstPerson;
-      resizeLabel(station.sprite,2.4,0.75,120);
+    const center=bounds.getCenter(new THREE.Vector3()),direction=new THREE.Vector3(0,1,.18).normalize();
+    this.viewMode='orbit';this.camera.fov=48;this.camera.near=.1;this.camera.updateProjectionMatrix();
+    this.camera.position.copy(center).add(direction);this.camera.lookAt(center);
+    const inverse=this.camera.quaternion.clone().invert();
+    const tangent=Math.tan(THREE.MathUtils.degToRad(this.camera.fov/2));
+    let distance=0;
+    for(const x of [bounds.min.x,bounds.max.x])for(const y of [bounds.min.y,bounds.max.y])for(const z of [bounds.min.z,bounds.max.z]) {
+      const local=new THREE.Vector3(x,y,z).sub(center).applyQuaternion(inverse);
+      distance=Math.max(distance,local.z+Math.max(Math.abs(local.x)/(tangent*this.camera.aspect),Math.abs(local.y)/tangent)*1.15);
     }
-    resizeLabel(this.robotActionSprite,2.6,0.65,160);
+    this.camera.position.copy(center).addScaledVector(direction,distance);this.camera.lookAt(center);
+    this.controls.target.copy(center);this.controls.enabled=true;this.controls.autoRotate=false;
+    this.controls.maxDistance=Math.max(35,distance*1.05);this.controls.update();
+    this.isFollowingRobot=false;this.isAutoSpinning=false;this.updateViewPresentation();
   }
+
+  updateViewPresentation() {
+    const firstPerson=this.viewMode==='fps'||this.viewMode==='robot';
+    const fov=firstPerson?78:this.viewMode==='thirdPerson'?68:48;
+    if(this.camera.fov!==fov){this.camera.fov=fov;this.camera.updateProjectionMatrix();}
+    if(this.avatarGroup)this.avatarGroup.visible=this.viewMode!=='fps';
+    this.updateEnvironmentLabels();
+    this.camera.updateMatrixWorld();
+    for(const {label} of this.environmentLabels||[]) {
+      if(!label.visible)continue;
+      const position=label.getWorldPosition(new THREE.Vector3());
+      const distance=Math.max(.01,-position.applyMatrix4(this.camera.matrixWorldInverse).z);
+      const height=26*2*distance*Math.tan(THREE.MathUtils.degToRad(fov/2))/Math.max(1,this.canvas.clientHeight);
+      label.scale.set(height*(label.userData.aspect||2),height,1);
+    }
+  }
+
 
   captureViewState() {
     return {
@@ -982,6 +789,28 @@ export class Apartment3DMap {
     this.camera.lookAt(pose.target);
   }
 
+  updateThirdPersonCamera() {
+    const avatar=this.world.avatar,pivot=this.to3D(avatar.x,avatar.y,1.1);
+    if(this.apartmentModel)this.apartmentModel.updateMatrixWorld(true);
+    const clearBoom=direction=>{
+      let distance=direction.length();direction.normalize();
+      if(this.apartmentModel) {
+        const ray=this.cameraBoomRay||(this.cameraBoomRay=new THREE.Raycaster());
+        ray.set(pivot,direction);ray.near=0;ray.far=distance;
+        const hit=ray.intersectObject(this.apartmentModel,true)[0];
+        if(hit)distance=Math.max(0,hit.distance-.18);
+      }
+      return {direction,distance};
+    };
+    let boom=clearBoom(new THREE.Vector3(-Math.sin(this.fpsYaw)*3,1.1-Math.sin(this.fpsPitch)*1.8,-Math.cos(this.fpsYaw)*3));
+    if(boom.distance<1.5) {
+      const higher=clearBoom(new THREE.Vector3(-Math.sin(this.fpsYaw)*.25,1.6,-Math.cos(this.fpsYaw)*.25));
+      if(higher.distance>boom.distance)boom=higher;
+    }
+    this.camera.position.copy(pivot).addScaledVector(boom.direction,boom.distance);
+    this.camera.lookAt(pivot);
+  }
+
   setHeading(angleDegrees) {
     if (this.viewMode === 'robot') return;
     if (!this.controls) return;
@@ -998,7 +827,7 @@ export class Apartment3DMap {
   }
 
   toggleAutoSpin() {
-    if (this.viewMode === 'robot') return false;
+    if (this.viewMode === 'robot' || this.viewMode === 'thirdPerson') return false;
     this.isAutoSpinning = !this.isAutoSpinning;
     if (this.controls) {
       this.controls.autoRotate = this.isAutoSpinning;
@@ -1008,7 +837,7 @@ export class Apartment3DMap {
   }
 
   focusRobot() {
-    if (this.viewMode === 'robot') return;
+    if (this.viewMode === 'robot' || this.viewMode === 'thirdPerson') return;
     if (!this.world.robot || !this.controls) return;
     const r = this.world.robot;
     const robot3D = this.to3D(r.x, r.y, 0.24);
@@ -1017,6 +846,7 @@ export class Apartment3DMap {
   }
 
   toggleFollowRobot() {
+    if (this.viewMode === 'thirdPerson') return false;
     this.isFollowingRobot = !this.isFollowingRobot;
     if (this.isFollowingRobot) {
       this.focusRobot();
@@ -1074,20 +904,7 @@ export class Apartment3DMap {
       // Invert 2D heading for 3D Y-axis rotation
       this.robotGroup.rotation.y = -r.heading + Math.PI / 2;
 
-      // Spin lidar scanner dome
-      if (this.robotLidarTurret) {
-        this.robotLidarTurret.rotation.y += 0.12;
-      }
-
-      // Pulse ground beacon ring & vertical beam
-      if (this.robotGroundBeacon) {
-        const pulse = 1.0 + Math.sin(performance.now() * 0.005) * 0.15;
-        this.robotGroundBeacon.scale.set(pulse, 1, pulse);
-        if (this.robotBeamMat) {
-          this.robotBeamMat.opacity = 0.20 + Math.sin(performance.now() * 0.004) * 0.08;
-        }
-      }
-
+      // Update the physical status LED.
       // Dynamically update LED ring & ground halo & beam colors
       if (this.robotLedMat) {
         const rgb = r.ledColor.match(/[\d.]+/g)?.slice(0,3).map(Number) || [59,130,246];
@@ -1095,13 +912,7 @@ export class Apartment3DMap {
 
         this.robotLedMat.color.setHex(col);
         this.robotLedMat.emissive.setHex(col);
-        if (this.robotGroundMat) this.robotGroundMat.color.setHex(col);
-        if (this.robotBeamMat) this.robotBeamMat.color.setHex(col);
       }
-
-      // Update Overhead Action Sprite
-      const act = r.traceState?.action || (r.vacuumActive ? 'VACUUM ON' : r.mopDeployed ? 'MOPPING' : 'READY / CRUISING');
-      this.updateRobotActionSprite(`⚙️ ${act} • 🔋 ${Math.round(r.battery)}%`);
 
       // Follow Camera Mode: keep camera tracking the robot
       if (this.isFollowingRobot && this.controls && this.viewMode === 'orbit') {
@@ -1135,27 +946,18 @@ export class Apartment3DMap {
       w.mesh.visible = !w.cell.cleaned;
     });
 
-    // 5. Holographic Station Rings Pulsing Animation
-    const time = performance.now() * 0.003;
-    this.stationObjects.forEach(st => {
-      st.ringMesh.rotation.z += 0.015;
-      const isCurrent = appState.currentStep === st.def.step;
-      const isHover = this.hoveredStation === st.def.step;
-      const baseScale = isHover ? 1.25 : isCurrent ? 1.1 : 1.0;
-      const pulse = baseScale + Math.sin(time + st.def.step) * 0.06;
-      st.ringMesh.scale.set(pulse, pulse, pulse);
-    });
-
     // 6. Avatar Locomotion Update (Camera-Relative Screen Space & Wall Sliding)
     if (this.viewMode === 'robot') {
       this.updateRobotCamera();
-    } else if (this.viewMode === 'fps') {
+    } else if (this.viewMode === 'fps' || this.viewMode === 'thirdPerson') {
       this.updateFpsLocomotion(delta);
     } else {
       this.controls.update();
       this.updateOrbitLocomotion(delta);
     }
 
+    const observationMode=this.viewMode==='orbit'?'3d':this.viewMode;
+    if(this.environmentObservation&&globalThis.window?.currentViewMode===observationMode)appState.observeEnvironment(this.world,observationMode);
     this.updateInspectionObjects();
     this.updateViewPresentation();
 
@@ -1269,17 +1071,18 @@ export class Apartment3DMap {
       avatar.moving = false;
     }
 
-    // Follow avatar eye level
-    const avatarPos = this.to3D(avatar.x, avatar.y, 1.65);
-    this.camera.position.copy(avatarPos);
+    if(this.viewMode==='thirdPerson')this.updateThirdPersonCamera();
+    else {
+      const avatarPos = this.to3D(avatar.x, avatar.y, 1.65);
+      this.camera.position.copy(avatarPos);
+      const lookDir = new THREE.Vector3(
+        Math.sin(this.fpsYaw) * Math.cos(this.fpsPitch),
+        Math.sin(this.fpsPitch),
+        Math.cos(this.fpsYaw) * Math.cos(this.fpsPitch)
+      );
+      this.camera.lookAt(this.camera.position.clone().add(lookDir));
+    }
 
-    // Camera look direction from yaw and pitch
-    const lookDir = new THREE.Vector3(
-      Math.sin(this.fpsYaw) * Math.cos(this.fpsPitch),
-      Math.sin(this.fpsPitch),
-      Math.cos(this.fpsYaw) * Math.cos(this.fpsPitch)
-    );
-    this.camera.lookAt(this.camera.position.clone().add(lookDir));
   }
 
   updateCompassHud() {
@@ -1290,7 +1093,7 @@ export class Apartment3DMap {
     let deg = 0;
     if (this.viewMode === 'robot') {
       deg = Math.round(((this.world.robot.heading * 180 / Math.PI % 360) + 360) % 360) % 360;
-    } else if (this.viewMode === 'fps') {
+    } else if (this.viewMode === 'fps' || this.viewMode === 'thirdPerson') {
       deg = Math.round(((this.fpsYaw * 180) / Math.PI) % 360 + 360) % 360;
     } else if (this.controls) {
       const az = this.controls.getAzimuthalAngle();

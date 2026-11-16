@@ -60,12 +60,12 @@ test('edit buttons end the run and navigate directly to the selected PEAS step',
   const oldWindow=globalThis.window;
   let target=null, ended=null;
   const controls=new Map();
-  const edit={dataset:{editStep:'2'}};
+  const edit={dataset:{editStep:'3'}};
   const view=Object.create(StepsView.prototype);
   view.panel={innerHTML:'',querySelector(selector){if(!controls.has(selector))controls.set(selector,{value:'',textContent:''});return controls.get(selector);},querySelectorAll(selector){return selector==='[data-edit-step]'?[edit]:[];}};
   globalThis.window={simEngine:{scores:{},endRun(reason){ended=reason;}},navigateStep(step){target=step;}};
   t.after(()=>{globalThis.window=oldWindow;});
   const previous=appState.sessionFinished;appState.sessionFinished=false;t.after(()=>{appState.sessionFinished=previous;});
-  view.renderStep5();edit.onclick();
-  assert.equal(ended,'revision');assert.equal(target,2);
+  view.renderStep6();edit.onclick();
+  assert.equal(ended,'revision');assert.equal(target,3);
 });

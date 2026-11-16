@@ -3,11 +3,12 @@ import { translate } from '../i18n.js';
  * CollabPEAS - High-Fidelity Realistic Apartment Canvas Engine
  * Directly renders Materials/Apartment.png at full native resolution with high-DPI scaling.
  * Features smooth camera pan & zoom, operator locomotion, roaming cat NPC,
- * cleaning robot, particle effects, teleportation pads, and interactive stations.
+ * physical household objects, floor cleaning targets and Environment observation labels.
  */
 
 import { appState } from '../state.js';
 import { apartmentCollision } from '../sim/apartment-collision-data.js';
+const objectLabel = object => object.type==='CUP'?'Mug':object.type==='FOOD'?'Food bowl':object.id==='TRASH_1'?'Paper':'Can';
 
 export class HouseCanvasRenderer {
   constructor(canvasElement, world) {
@@ -38,24 +39,8 @@ export class HouseCanvasRenderer {
     this.panStart = { x: 0, y: 0 };
     this.animFrame = null;
     this.walkCycle = 0;
-    this.teleportRipple = null;
 
-    // Interactive Stations in the House (Step 1-5 distributed across apartment rooms)
-    this.stations = [
-      { step: 1, name: 'Priorities', x: 450, y: 380, radius: 42, icon: '🎯' },
-      { step: 2, name: 'Sensors', x: 340, y: 820, radius: 42, icon: '📡' },
-      { step: 3, name: 'Body', x: 350, y: 480, radius: 42, icon: '🦾' },
-      { step: 4, name: 'Rules', x: 600, y: 860, radius: 42, icon: '🧩' },
-      { step: 5, name: 'Run', x: 880, y: 860, radius: 42, icon: '🔬' }
-    ];
-
-    for (const station of this.stations) {
-      Object.assign(station, this.world.nearestWalkable(station.x, station.y, 24));
-    }
-
-    this.activeStationPrompt = null;
-    this.hoveredTeleport = null;
-    this.hoveredTag = null;
+    this.environmentObservation = false;
 
     this.initControls();
     this.resizeCanvas();
@@ -148,7 +133,8 @@ export class HouseCanvasRenderer {
       // Don't intercept keys if focused on text input or if modal is open
       if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return;
       const modal = document.getElementById('stepModalOverlay');
-      if (modal && modal.style.display !== 'none') return;
+      if (modal && modal.style.display !== 'none' &&
+          !(modal.classList.contains('workstation-layout') && e.target === this.canvas)) return;
 
       // 360° Rotation Keys Q / E
       if (e.key === 'q' || e.key === 'Q') {
@@ -167,10 +153,6 @@ export class HouseCanvasRenderer {
       }
       if (this.keys.hasOwnProperty(k)) {
         this.keys[k] = true;
-        e.preventDefault();
-      }
-      if (e.key === ' ' && this.activeStationPrompt) {
-        (window.navigateStep || window.openStepModal)?.(this.activeStationPrompt.step);
         e.preventDefault();
       }
     });
@@ -215,22 +197,6 @@ export class HouseCanvasRenderer {
         this.camera.y = ny;
       }
 
-      // Check hover on teleport pads or tags
-      const { x, y } = this.screenToWorld(e.clientX, e.clientY);
-      this.hoveredTeleport = null;
-      for (const tp of this.world.teleportMarkers) {
-        if (Math.hypot(x - tp.x, y - tp.y) < 28) {
-          this.hoveredTeleport = tp;
-          this.canvas.style.cursor = 'pointer';
-          return;
-        }
-      }
-      for (const st of this.stations) {
-        if (Math.hypot(x - st.x, y - st.y) < st.radius) {
-          this.canvas.style.cursor = 'pointer';
-          return;
-        }
-      }
       this.canvas.style.cursor = this.isPanning ? 'grabbing' : 'default';
     });
 
@@ -238,46 +204,11 @@ export class HouseCanvasRenderer {
       this.isPanning = false;
     });
 
-    // Click handler for teleports and stations
-    this.canvas.addEventListener('click', (e) => {
-      if (this.hasDragged) return; // ignore drag release
-
-      const { x, y } = this.screenToWorld(e.clientX, e.clientY);
-
-      // 1. Check Teleport Pad Click
-      for (const tp of this.world.teleportMarkers) {
-        if (Math.hypot(x - tp.x, y - tp.y) < 28) {
-          this.teleportAvatar(tp.x, tp.y);
-          return;
-        }
-      }
-
-      // 2. Check Click on Stations
-      for (const st of this.stations) {
-        if (Math.hypot(x - st.x, y - st.y) < st.radius + 10) {
-          (window.navigateStep || window.openStepModal)?.(st.step);
-            return;
-        }
-      }
-
-      // 3. Check Click on Inspection Tags
-      for (const tag of this.world.inspectionTags) {
-        if (Math.hypot(x - tag.x, y - tag.y) < 24) {
-          this.hoveredTag = tag;
-          this.inspectTag(tag);
-          return;
-        }
-      }
-
-      // 4. Click to move avatar
-      this.world.avatar.targetX = x;
-      this.world.avatar.targetY = y;
+    this.canvas.addEventListener('click', e => {
+      if(this.hasDragged||window.currentViewMode==='robot')return;
+      const {x,y}=this.screenToWorld(e.clientX,e.clientY);
+      this.world.avatar.targetX=x;this.world.avatar.targetY=y;
     });
-  }
-
-  inspectTag(tag) {
-    this.hoveredTag = tag;
-    appState.recordHotspot?.(tag.id, '2d');
   }
 
   screenToWorld(clientX, clientY) {
@@ -296,15 +227,6 @@ export class HouseCanvasRenderer {
       x: (rx - this.camera.x) / this.camera.scale,
       y: (ry - this.camera.y) / this.camera.scale
     };
-  }
-
-  teleportAvatar(targetX, targetY) {
-    if (this.world.checkCollision(targetX, targetY, this.world.avatar.radius)) return;
-    this.world.avatar.x = targetX;
-    this.world.avatar.y = targetY;
-    this.world.avatar.targetX = null;
-    this.world.avatar.targetY = null;
-    this.teleportRipple = { x: targetX, y: targetY, radius: 10, alpha: 1.0 };
   }
 
   startLoop() {
@@ -326,7 +248,7 @@ export class HouseCanvasRenderer {
     const avatar = this.world.avatar;
 
     // If 3D Orbit or FPS mode is active, map-3d.js handles camera-relative avatar locomotion
-    if (window.currentViewMode === '3d' || window.currentViewMode === 'fps' || window.currentViewMode === 'robot') {
+    if (window.currentViewMode === '3d' || window.currentViewMode === 'fps' || window.currentViewMode === 'thirdPerson' || window.currentViewMode === 'robot') {
       return;
     }
 
@@ -385,110 +307,30 @@ export class HouseCanvasRenderer {
     } else {
       avatar.moving = false;
     }
-
-    const nearbyTag = this.world.inspectionTags.find(tag => Math.hypot(avatar.x - tag.x, avatar.y - tag.y) < 65);
-    if (nearbyTag && nearbyTag !== this.nearbyTag) this.inspectTag(nearbyTag);
-    this.nearbyTag = nearbyTag;
-
-    // Check proximity to stations
-    this.activeStationPrompt = null;
-    for (const st of this.stations) {
-      const dist = Math.hypot(avatar.x - st.x, avatar.y - st.y);
-      if (dist < st.radius + 20) {
-        this.activeStationPrompt = st;
-        break;
-      }
-    }
-
-    // Teleport ripple
-    if (this.teleportRipple) {
-      this.teleportRipple.radius += 2.5;
-      this.teleportRipple.alpha -= 0.04;
-      if (this.teleportRipple.alpha <= 0) {
-        this.teleportRipple = null;
-      }
-    }
+    if(this.environmentObservation&&window.currentViewMode==='fallback')appState.observeEnvironment(this.world,'fallback');
   }
 
   render() {
-    const ctx = this.ctx;
-    const w = this.cssWidth || 1000;
-    const h = this.cssHeight || 700;
-
-    ctx.clearRect(0, 0, w, h);
-
-    // Smoothly follow robot if follow camera is enabled
-    if (this.isFollowingRobot && this.world.robot) {
-      const r = this.world.robot;
-      const targetCamX = w / 2 - r.x * this.camera.scale;
-      const targetCamY = h / 2 - r.y * this.camera.scale;
-      this.camera.x += (targetCamX - this.camera.x) * 0.12;
-      this.camera.y += (targetCamY - this.camera.y) * 0.12;
+    const ctx=this.ctx,w=this.cssWidth||1000,h=this.cssHeight||700;
+    ctx.clearRect(0,0,w,h);
+    if(this.isFollowingRobot&&this.world.robot) {
+      const robot=this.world.robot;
+      this.camera.x+=(w/2-robot.x*this.camera.scale-this.camera.x)*.12;
+      this.camera.y+=(h/2-robot.y*this.camera.scale-this.camera.y)*.12;
     }
-
     ctx.save();
-    if (this.headingAngle) {
-      ctx.translate(w / 2, h / 2);
-      ctx.rotate(this.headingAngle);
-      ctx.translate(-w / 2, -h / 2);
-    }
-    ctx.translate(this.camera.x, this.camera.y);
-    ctx.scale(this.camera.scale, this.camera.scale);
-
-    // 1. Draw model-aligned overhead apartment
-    if (this.bgLoaded) {
-      ctx.imageSmoothingEnabled = true;
-      ctx.imageSmoothingQuality = 'high';
-      ctx.drawImage(this.bgImage, 0, 0, this.world.width, this.world.height);
+    if(this.headingAngle){ctx.translate(w/2,h/2);ctx.rotate(this.headingAngle);ctx.translate(-w/2,-h/2);}
+    ctx.translate(this.camera.x,this.camera.y);ctx.scale(this.camera.scale,this.camera.scale);
+    if(this.bgLoaded) {
+      ctx.imageSmoothingEnabled=true;ctx.imageSmoothingQuality='high';
+      ctx.drawImage(this.bgImage,0,0,this.world.width,this.world.height);
     } else {
-      ctx.fillStyle = '#0f172a';
-      ctx.fillRect(0, 0, this.world.width, this.world.height);
-      this.renderModelPlan(ctx);
+      ctx.fillStyle='#eaf0f5';ctx.fillRect(0,0,this.world.width,this.world.height);this.renderModelPlan(ctx);
     }
-
-    // 2. Room Name Labels (Subtle, architectural floating typography)
-    this.renderRoomLabels(ctx);
-
-    // 3. Teleportation Target Markers (Fusion VR Training)
-    this.renderTeleportPads(ctx);
-
-    // 4. Interactive Stations in the House (Step 1-5 Holographic Rings)
-    this.renderStations(ctx);
-
-    // 5. Environmental Inspection Tags (Step 2A)
-    this.renderInspectionTags(ctx);
-
-    // 6. Interactive Dirt Specks & Shimmering Spills
-    this.renderFloorTargets(ctx);
-
-    // 7. Scattered Objects (Trash & Belongings)
-    this.renderDestinations(ctx);
-    this.renderScatteredObjects(ctx);
-
-    // 8. Roaming Cat NPC
-    this.renderCat(ctx);
-
-    // 9. Cleaning Robot
-    this.renderRobot(ctx);
-
-    // 10. Operator Avatar
-    this.renderAvatar(ctx);
-
-    // 11. Teleport Ripple
-    if (this.teleportRipple) {
-      ctx.save();
-      ctx.strokeStyle = `rgba(56, 189, 248, ${this.teleportRipple.alpha})`;
-      ctx.lineWidth = 3;
-      ctx.beginPath();
-      ctx.arc(this.teleportRipple.x, this.teleportRipple.y, this.teleportRipple.radius, 0, Math.PI * 2);
-      ctx.stroke();
-      ctx.restore();
-    }
-
+    if(this.environmentObservation&&!appState.isRobotPovActive)this.renderRoomLabels(ctx);
+    this.renderFloorTargets(ctx);this.renderDestinations(ctx);this.renderScatteredObjects(ctx);
+    this.renderCat(ctx);this.renderRobot(ctx);this.renderAvatar(ctx);this.renderEnvironmentLabels(ctx);
     ctx.restore();
-
-    // 12. Screen-Space UI Overlays
-    this.renderScreenOverlays(ctx);
   }
 
   renderModelPlan(ctx) {
@@ -514,179 +356,92 @@ export class HouseCanvasRenderer {
     ctx.restore();
   }
 
-  renderTeleportPads(ctx) {
-    for (const tp of this.world.teleportMarkers) {
-      const isHovered = this.hoveredTeleport === tp;
-      ctx.save();
-
-      // Outer Pulse Ring
-      ctx.strokeStyle = isHovered ? '#38bdf8' : 'rgba(56, 189, 248, 0.45)';
-      ctx.lineWidth = isHovered ? 2.5 : 1.5;
-      ctx.setLineDash([4, 4]);
-      ctx.beginPath();
-      ctx.arc(tp.x, tp.y, isHovered ? 24 : 20, 0, Math.PI * 2);
-      ctx.stroke();
-      ctx.setLineDash([]);
-
-      // Inner Glowing Disc
-      ctx.fillStyle = isHovered ? 'rgba(56, 189, 248, 0.35)' : 'rgba(15, 23, 42, 0.65)';
-      ctx.beginPath();
-      ctx.arc(tp.x, tp.y, 14, 0, Math.PI * 2);
-      ctx.fill();
-
-      // Icon & Name
-      ctx.font = '12px sans-serif';
-      ctx.fillText(tp.icon, tp.x - 6, tp.y + 4);
-
-      if (isHovered) {
-        ctx.fillStyle = 'rgba(15, 23, 42, 0.95)';
-        ctx.strokeStyle = '#38bdf8';
-        ctx.lineWidth = 1;
-        const msg = translate(`⚡ Teleport to ${tp.name}`);
-        ctx.font = 'bold 11px Inter, sans-serif';
-        const w = ctx.measureText(msg).width + 16;
-        ctx.fillRect(tp.x - w / 2, tp.y - 34, w, 20);
-        ctx.strokeRect(tp.x - w / 2, tp.y - 34, w, 20);
-        ctx.fillStyle = '#38bdf8';
-        ctx.textAlign = 'center';
-        ctx.fillText(msg, tp.x, tp.y - 20);
-      }
-
-      ctx.restore();
-    }
+  setEnvironmentObservation(active) {
+    this.environmentObservation=Boolean(active);
   }
 
-  renderStations(ctx) {
-    for (const st of this.stations) {
-      ctx.save();
-      const isCurrent = appState.currentStep === st.step;
-      const isNearby = this.activeStationPrompt === st;
-
-      // Glow halo
-      ctx.strokeStyle = isCurrent ? '#38bdf8' : isNearby ? '#facc15' : 'rgba(255, 255, 255, 0.5)';
-      ctx.fillStyle = isCurrent ? 'rgba(56, 189, 248, 0.25)' : 'rgba(15, 23, 42, 0.75)';
-      ctx.lineWidth = isNearby ? 3.5 : 2;
-
-      ctx.beginPath();
-      ctx.arc(st.x, st.y, st.radius, 0, Math.PI * 2);
-      ctx.fill();
-      ctx.stroke();
-
-      ctx.font = '18px sans-serif';
-      ctx.fillText(st.icon, st.x - 9, st.y - 4);
-
-      ctx.fillStyle = isCurrent ? '#38bdf8' : '#ffffff';
-      ctx.font = 'bold 11px Inter, sans-serif';
-      ctx.textAlign = 'center';
-      ctx.fillText(translate(`Step ${st.step}`), st.x, st.y + 16);
-
-      ctx.restore();
-    }
+  getEnvironmentLabels() {
+    if(!this.environmentObservation||appState.isRobotPovActive||globalThis.window?.currentViewMode==='robot')return [];
+    return [
+      ...this.world.dirtCells.filter(entity=>!entity.cleaned).map(entity=>({entity,text:'Dirt'})),
+      ...this.world.wetCells.filter(entity=>!entity.cleaned).map(entity=>({entity,text:'Spill'})),
+      ...this.world.objects.filter(entity=>!entity.carried&&!entity.disposed&&!entity.sorted).map(entity=>({entity,text:objectLabel(entity)})),
+      {entity:this.world.dock,text:'Charging dock'},{entity:this.world.cat,text:'Cat'},{entity:this.world.avatar,text:'Person'}
+    ].map(item=>{const targetId=item.entity.id||{'Charging dock':'DOCK',Cat:'CAT',Person:'PERSON'}[item.text];return {...item,targetId,observed:Boolean(appState.observedEnvironmentTargets?.has(targetId))};});
   }
 
-  renderInspectionTags(ctx) {
-    for (const tag of this.world.inspectionTags) {
-      ctx.save();
-      const distToAvatar = Math.hypot(this.world.avatar.x - tag.x, this.world.avatar.y - tag.y);
-      const isClose = distToAvatar < 65;
-
-      ctx.fillStyle = isClose ? '#facc15' : '#38bdf8';
-      ctx.strokeStyle = '#0f172a';
-      ctx.lineWidth = 2;
-      ctx.beginPath();
-      ctx.arc(tag.x, tag.y, 13, 0, Math.PI * 2);
-      ctx.fill();
-      ctx.stroke();
-
-      ctx.font = '12px sans-serif';
-      ctx.fillText(tag.icon, tag.x - 6, tag.y + 4);
-
-      if (isClose || this.hoveredTag === tag) {
-        ctx.fillStyle = 'rgba(15, 23, 42, 0.95)';
-        ctx.strokeStyle = '#facc15';
-        ctx.lineWidth = 1.5;
-        const text = translate(tag.text);
-        ctx.font = 'bold 11px Inter, sans-serif';
-        const w = ctx.measureText(text).width + 16;
-        ctx.fillRect(tag.x - w / 2, tag.y - 38, w, 22);
-        ctx.strokeRect(tag.x - w / 2, tag.y - 38, w, 22);
-
-        ctx.fillStyle = '#fef08a';
-        ctx.textAlign = 'center';
-        ctx.fillText(text, tag.x, tag.y - 23);
-      }
-      ctx.restore();
+  renderEnvironmentLabels(ctx) {
+    const scale=this.camera.scale;
+    for(const {entity,text,observed} of this.getEnvironmentLabels()) {
+      ctx.save();ctx.font=`600 ${12/scale}px -apple-system, sans-serif`;ctx.textAlign='center';
+      const caption=(observed?'✓ ':'')+translate(text),width=ctx.measureText(caption).width+14/scale,height=24/scale;
+      const x=entity.x,y=entity.y-28/scale;
+      ctx.fillStyle=observed?'#dcfce7':'rgba(255,255,255,.96)';ctx.strokeStyle=observed?'#16a34a':'#71879c';ctx.lineWidth=1/scale;
+      ctx.beginPath();ctx.roundRect(x-width/2,y-height,width,height,5/scale);ctx.fill();ctx.stroke();
+      ctx.fillStyle=observed?'#166534':'#263c4c';ctx.fillText(caption,x,y-8/scale);ctx.restore();
     }
   }
 
   renderFloorTargets(ctx) {
-    // Dirt Cells
-    for (const d of this.world.dirtCells) {
-      if (!d.cleaned) {
-        ctx.save();
-        ctx.fillStyle = 'rgba(120, 53, 15, 0.75)';
-        ctx.beginPath();
-        ctx.arc(d.x, d.y, d.radius, 0, Math.PI * 2);
-        ctx.fill();
-
-        ctx.fillStyle = 'rgba(69, 26, 3, 0.95)';
-        ctx.fillRect(d.x - 4, d.y - 3, 3, 3);
-        ctx.fillRect(d.x + 3, d.y + 2, 2, 2);
-        ctx.fillRect(d.x, d.y + 4, 3, 2);
-        ctx.restore();
+    for(const [index,dirt] of this.world.dirtCells.entries()) {
+      if(dirt.cleaned)continue;
+      ctx.save();
+      for(let i=0;i<26;i++) {
+        const seed=Math.sin((i+1)*127.1)*43758.5453;
+        const angle=i*2.39996+index*.7,distance=Math.sqrt(seed-Math.floor(seed))*dirt.radius;
+        ctx.fillStyle=['#e5dac5','#c5bcae','#807b73'][i%3];
+        ctx.beginPath();ctx.ellipse(dirt.x+Math.cos(angle)*distance,dirt.y+Math.sin(angle)*distance,1.5+i%3,1+i%2,angle,0,Math.PI*2);ctx.fill();
       }
+      ctx.restore();
     }
-
-    // Wet Spills
-    for (const w of this.world.wetCells) {
-      if (!w.cleaned) {
-        ctx.save();
-        ctx.fillStyle = 'rgba(56, 189, 248, 0.65)';
-        ctx.strokeStyle = 'rgba(186, 230, 253, 0.95)';
-        ctx.lineWidth = 2;
-        ctx.beginPath();
-        ctx.ellipse(w.x, w.y, w.radius * 1.3, w.radius * 0.9, 0.3, 0, Math.PI * 2);
-        ctx.fill();
-        ctx.stroke();
-
-        ctx.font = '14px sans-serif';
-        ctx.fillText('💧', w.x - 7, w.y + 5);
-        ctx.restore();
-      }
+    const outline=[[1.2,0],[1,.66],[.36,.96],[-.36,.78],[-1.14,.48],[-1.35,-.24],[-.48,-.81],[.36,-.9],[1.08,-.45]];
+    for(const spill of this.world.wetCells) {
+      if(spill.cleaned)continue;
+      ctx.save();ctx.fillStyle='rgba(37,186,212,.75)';ctx.strokeStyle='#e7fcff';ctx.lineWidth=1.6;
+      ctx.beginPath();ctx.moveTo(spill.x+(outline.at(-1)[0]+outline[0][0])*spill.radius/2,spill.y+(outline.at(-1)[1]+outline[0][1])*spill.radius/2);
+      outline.forEach(([x,y],i)=>{const next=outline[(i+1)%outline.length];ctx.quadraticCurveTo(spill.x+x*spill.radius,spill.y+y*spill.radius,spill.x+(x+next[0])*spill.radius/2,spill.y+(y+next[1])*spill.radius/2);});
+      ctx.closePath();ctx.fill();ctx.stroke();
+      ctx.beginPath();ctx.moveTo(spill.x-spill.radius*.65,spill.y-spill.radius*.15);ctx.quadraticCurveTo(spill.x-spill.radius*.4,spill.y-spill.radius*.45,spill.x+spill.radius*.1,spill.y-spill.radius*.4);ctx.stroke();ctx.restore();
     }
   }
 
   renderDestinations(ctx) {
-    for(const [target,label,color] of [[this.world.smartBin,this.world.smartBin.isOpen?'Bin · lid open':'Bin','#22c55e'],[this.world.depositTable,'Belongings destination','#a16207']]) {
+    for(const [target,color] of [[this.world.smartBin,'#22c55e'],[this.world.depositTable,'#a16207']]) {
       ctx.save();ctx.fillStyle=color;ctx.fillRect(target.x-16,target.y-12,32,24);
       if(target===this.world.smartBin) {
         ctx.strokeStyle='#f8fafc';ctx.lineWidth=4;ctx.beginPath();ctx.moveTo(target.x-18,target.y-15);
         ctx.lineTo(target.x+18,target.y-(target.isOpen?35:15));ctx.stroke();
       }
-      ctx.fillStyle='#f8fafc';ctx.font='12px sans-serif';ctx.fillText(translate(label),target.x-20,target.y+30);ctx.restore();
+      ctx.restore();
     }
+    const dock=this.world.dock;
+    ctx.save();ctx.fillStyle='#64748b';ctx.fillRect(dock.x-18,dock.y-12,36,24);
+    ctx.fillStyle='#334155';ctx.fillRect(dock.x-20,dock.y-15,40,7);
+    ctx.fillStyle='#e2e8f0';ctx.fillRect(dock.x-7,dock.y-5,4,8);ctx.fillRect(dock.x+3,dock.y-5,4,8);ctx.restore();
   }
 
   renderScatteredObjects(ctx) {
-    for (const obj of this.world.objects) {
-      if (!obj.disposed) {
-        ctx.save();
-        ctx.fillStyle = '#0f172a';
-        ctx.strokeStyle = obj.type === 'TRASH' ? '#f43f5e' : '#10b981';
-        ctx.lineWidth = 2;
-        ctx.beginPath();
-        ctx.arc(obj.x, obj.y, 14, 0, Math.PI * 2);
-        ctx.fill();
-        ctx.stroke();
-
-        ctx.font = '14px sans-serif';
-        ctx.fillText(obj.icon, obj.x - 7, obj.y + 5);
-
-        ctx.fillStyle = '#f8fafc';
-        ctx.font = 'bold 10px Inter, sans-serif';
-        ctx.fillText(translate(obj.name), obj.x - 20, obj.y + 22);
-        ctx.restore();
+    for(const object of this.world.objects) {
+      if(object.disposed||object.sorted)continue;
+      const kind=objectLabel(object);ctx.save();ctx.translate(object.x,object.y);ctx.lineWidth=1.5;
+      if(kind==='Paper') {
+        ctx.fillStyle='#f2eee4';ctx.strokeStyle='#ada89f';ctx.beginPath();
+        ctx.moveTo(-11,-8);ctx.lineTo(-3,-12);ctx.lineTo(10,-7);ctx.lineTo(12,7);ctx.lineTo(0,10);ctx.lineTo(-10,6);ctx.closePath();ctx.fill();ctx.stroke();
+        ctx.beginPath();ctx.moveTo(-11,-8);ctx.lineTo(1,0);ctx.lineTo(12,7);ctx.moveTo(1,0);ctx.lineTo(-3,-12);ctx.stroke();
+      } else if(kind==='Can') {
+        ctx.fillStyle='#df5d50';ctx.strokeStyle='#824239';ctx.fillRect(-7,-10,14,20);ctx.strokeRect(-7,-10,14,20);
+        ctx.fillStyle='#cbd5e1';ctx.beginPath();ctx.ellipse(0,-10,7,3,0,0,Math.PI*2);ctx.fill();ctx.stroke();
+        ctx.fillStyle='#66717c';ctx.fillRect(-2,-11,4,2);
+      } else if(kind==='Mug') {
+        ctx.strokeStyle='#e2e5dd';ctx.lineWidth=4;ctx.beginPath();ctx.ellipse(10,0,6,7,0,0,Math.PI*2);ctx.stroke();
+        ctx.fillStyle='#f2f4ef';ctx.strokeStyle='#8f9b9d';ctx.lineWidth=1.5;ctx.beginPath();ctx.arc(0,0,10,0,Math.PI*2);ctx.fill();ctx.stroke();
+        ctx.fillStyle='#9c8160';ctx.beginPath();ctx.arc(0,0,6,0,Math.PI*2);ctx.fill();
+      } else {
+        ctx.fillStyle='#4c91bd';ctx.strokeStyle='#d3ecfb';ctx.beginPath();ctx.ellipse(0,0,13,10,0,0,Math.PI*2);ctx.fill();ctx.stroke();
+        ctx.fillStyle='#84603d';ctx.beginPath();ctx.ellipse(0,0,9,6,0,0,Math.PI*2);ctx.fill();
+        ctx.fillStyle='#b48a5d';for(const [x,y] of [[-4,-2],[2,-3],[4,2],[-2,3]])ctx.fillRect(x,y,2,2);
       }
+      ctx.restore();
     }
   }
 
@@ -731,156 +486,23 @@ export class HouseCanvasRenderer {
     ctx.stroke();
 
     ctx.restore();
-
-    ctx.fillStyle = '#ffedd5';
-    ctx.font = 'bold 10px Inter, sans-serif';
-    ctx.textAlign = 'center';
-    ctx.fillText(translate('🐱 Roaming Cat'), cat.x, cat.y - 18);
   }
 
   renderRobot(ctx) {
-    const robot = this.world.robot;
-    const installed = appState.installedSensors;
-
-    // 1. High-Visibility Animated Pulsing Ground Beacon
-    const pulse = Math.sin(Date.now() / 160) * 4;
-    const beaconRadius = robot.radius + 14 + pulse;
-    ctx.save();
-    ctx.translate(robot.x, robot.y);
-    ctx.strokeStyle = 'rgba(56, 189, 248, 0.75)';
-    ctx.fillStyle = 'rgba(56, 189, 248, 0.18)';
-    ctx.lineWidth = 2.5;
-    ctx.beginPath();
-    ctx.arc(0, 0, beaconRadius, 0, Math.PI * 2);
-    ctx.fill();
-    ctx.stroke();
-
-    // 2. Forward Headlight Beams & Directional Cone
-    ctx.rotate(robot.heading);
-    ctx.fillStyle = 'rgba(56, 189, 248, 0.22)';
-    ctx.beginPath();
-    ctx.moveTo(10, -6);
-    ctx.lineTo(55, -24);
-    ctx.lineTo(55, 24);
-    ctx.lineTo(10, 6);
-    ctx.closePath();
-    ctx.fill();
-
-    // 3. Chassis Base (Chrome Bevel + Metallic Slate Body)
-    ctx.fillStyle = '#334155';
-    ctx.strokeStyle = '#38bdf8';
-    ctx.lineWidth = 2.5;
-    ctx.beginPath();
-    ctx.arc(0, 0, robot.radius + 2, 0, Math.PI * 2);
-    ctx.fill();
-    ctx.stroke();
-
-    // Inner Metallic Core
-    ctx.fillStyle = '#0f172a';
-    ctx.beginPath();
-    ctx.arc(0, 0, robot.radius - 2, 0, Math.PI * 2);
-    ctx.fill();
-
-    // Wheels
-    ctx.fillStyle = '#64748b';
-    ctx.fillRect(-9, -robot.radius - 4, 18, 6);
-    ctx.fillRect(-9, robot.radius - 2, 18, 6);
-
-    // Status LED Ring
-    ctx.strokeStyle = robot.ledColor;
-    ctx.lineWidth = 3;
-    ctx.beginPath();
-    ctx.arc(0, 0, robot.radius * 0.55, 0, Math.PI * 2);
-    ctx.stroke();
-
-    // Headlights
-    ctx.fillStyle = '#ffffff';
-    ctx.beginPath();
-    ctx.arc(robot.radius - 4, -7, 3.5, 0, Math.PI * 2);
-    ctx.arc(robot.radius - 4, 7, 3.5, 0, Math.PI * 2);
-    ctx.fill();
-
-    // Rotating Lidar Scanner Dome with Red Laser Eye
-    const lidarAngle = (Date.now() / 120) % (Math.PI * 2);
-    ctx.fillStyle = '#0284c7';
-    ctx.beginPath();
-    ctx.arc(0, 0, 6, 0, Math.PI * 2);
-    ctx.fill();
-    ctx.fillStyle = '#ef4444';
-    ctx.beginPath();
-    ctx.arc(Math.cos(lidarAngle) * 5, Math.sin(lidarAngle) * 5, 2.5, 0, Math.PI * 2);
-    ctx.fill();
-
-    // Arm & Gripper
-    if (robot.armExtended) {
-      ctx.strokeStyle = '#cbd5e1';
-      ctx.lineWidth = 4;
-      ctx.beginPath();
-      ctx.moveTo(14, 0); ctx.lineTo(30, 0);
-      ctx.stroke();
-      ctx.strokeStyle = robot.gripperClosed ? '#10b981' : '#f59e0b';
-      ctx.lineWidth = 2.5;
-      ctx.beginPath();
-      ctx.moveTo(30, -7); ctx.lineTo(37, -2);
-      ctx.moveTo(30, 7); ctx.lineTo(37, 2);
-      ctx.stroke();
+    const robot=this.world.robot;
+    ctx.save();ctx.translate(robot.x,robot.y);ctx.rotate(robot.heading);
+    ctx.fillStyle='#334155';ctx.strokeStyle='#94a3b8';ctx.lineWidth=2.5;
+    ctx.beginPath();ctx.arc(0,0,robot.radius+2,0,Math.PI*2);ctx.fill();ctx.stroke();
+    ctx.fillStyle='#0f172a';ctx.beginPath();ctx.arc(0,0,robot.radius-2,0,Math.PI*2);ctx.fill();
+    ctx.fillStyle='#64748b';ctx.fillRect(-9,-robot.radius-4,18,6);ctx.fillRect(-9,robot.radius-2,18,6);
+    ctx.strokeStyle=robot.ledColor;ctx.lineWidth=3;ctx.beginPath();ctx.arc(0,0,robot.radius*.55,0,Math.PI*2);ctx.stroke();
+    ctx.fillStyle='#fff';ctx.beginPath();ctx.arc(robot.radius-4,-7,3,0,Math.PI*2);ctx.arc(robot.radius-4,7,3,0,Math.PI*2);ctx.fill();
+    ctx.fillStyle='#0284c7';ctx.beginPath();ctx.arc(0,0,6,0,Math.PI*2);ctx.fill();
+    ctx.fillStyle='#ef4444';ctx.beginPath();ctx.arc(4,0,2,0,Math.PI*2);ctx.fill();
+    if(robot.armExtended) {
+      ctx.strokeStyle='#cbd5e1';ctx.lineWidth=4;ctx.beginPath();ctx.moveTo(14,0);ctx.lineTo(30,0);ctx.stroke();
+      ctx.strokeStyle=robot.gripperClosed?'#10b981':'#f59e0b';ctx.lineWidth=2.5;ctx.beginPath();ctx.moveTo(30,-7);ctx.lineTo(37,-2);ctx.moveTo(30,7);ctx.lineTo(37,2);ctx.stroke();
     }
-
-    // Front Direction Arrow
-    ctx.strokeStyle = '#ffffff';
-    ctx.lineWidth = 2.5;
-    ctx.beginPath();
-    ctx.moveTo(0, 0);
-    ctx.lineTo(14, 0);
-    ctx.stroke();
-
-    ctx.restore();
-
-    // 4. Game HUD Nameplate (High-contrast, bold, impossible to miss)
-    ctx.save();
-    const trace = robot.traceState;
-    const actText = trace?.action ? `⚙️ ${trace.action}` : (robot.vacuumActive ? '⚙️ VACUUM ON' : robot.mopDeployed ? '⚙️ MOPPING' : '⚙️ READY / CRUISING');
-    const battText = `🔋 ${Math.round(robot.battery)}%`;
-    const subText = translate(`${actText} • ${battText}`);
-
-    ctx.font = 'bold 11px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
-    const titleWidth = ctx.measureText(translate('🤖 CLEANING ROBOT')).width;
-    ctx.font = 'bold 10px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
-    const subWidth = ctx.measureText(subText).width;
-    const pillW = Math.max(titleWidth, subWidth) + 24;
-    const pillH = 34;
-    const pillX = robot.x - pillW / 2;
-    const pillY = robot.y - 56;
-
-    // Background Badge
-    ctx.fillStyle = 'rgba(15, 23, 42, 0.96)';
-    ctx.strokeStyle = '#38bdf8';
-    ctx.lineWidth = 2;
-    ctx.beginPath();
-    ctx.roundRect(pillX, pillY, pillW, pillH, 8);
-    ctx.fill();
-    ctx.stroke();
-
-    // Downward pointer triangle
-    ctx.fillStyle = '#38bdf8';
-    ctx.beginPath();
-    ctx.moveTo(robot.x - 6, pillY + pillH);
-    ctx.lineTo(robot.x + 6, pillY + pillH);
-    ctx.lineTo(robot.x, pillY + pillH + 6);
-    ctx.closePath();
-    ctx.fill();
-
-    // Title Text
-    ctx.fillStyle = '#ffffff';
-    ctx.font = 'bold 11px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
-    ctx.textAlign = 'center';
-    ctx.fillText(translate('🤖 CLEANING ROBOT'), robot.x, pillY + 14);
-
-    // Subtitle / Action & Battery
-    ctx.fillStyle = robot.isStopped ? '#f87171' : robot.isSlow ? '#fbbf24' : '#34d399';
-    ctx.font = 'bold 10px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
-    ctx.fillText(subText, robot.x, pillY + 28);
-
     ctx.restore();
   }
 
@@ -889,15 +511,6 @@ export class HouseCanvasRenderer {
 
     ctx.save();
     ctx.translate(avatar.x, avatar.y);
-
-    // 2-Meter Proximity Circle
-    ctx.strokeStyle = 'rgba(6, 182, 212, 0.35)';
-    ctx.lineWidth = 1.5;
-    ctx.setLineDash([4, 4]);
-    ctx.beginPath();
-    ctx.arc(0, 0, 75, 0, Math.PI * 2);
-    ctx.stroke();
-    ctx.setLineDash([]);
 
     // Feet
     if (avatar.moving) {
@@ -923,41 +536,7 @@ export class HouseCanvasRenderer {
     ctx.fillRect(avatar.radius - 4, -4, 6, 8);
 
     ctx.restore();
-
-    ctx.fillStyle = '#bfdbfe';
-    ctx.font = 'bold 11px Inter, sans-serif';
-    ctx.textAlign = 'center';
-    ctx.fillText(translate('👤 You'), avatar.x, avatar.y - 24);
   }
 
-  renderScreenOverlays(ctx) {
-    const w = this.cssWidth || 1000;
-    const h = this.cssHeight || 700;
 
-    // Do not draw station prompt if modal is currently open
-    const modal = document.getElementById('stepModalOverlay');
-    if (modal && modal.style.display !== 'none') return;
-
-    // 1. Station Spacebar Prompt
-    if (this.activeStationPrompt) {
-      const st = this.activeStationPrompt;
-      ctx.save();
-      const msg = translate(`⚡ Press [SPACE] or Click to open ${st.name}`);
-      ctx.font = 'bold 13px Inter, sans-serif';
-      const tw = ctx.measureText(msg).width + 36;
-      const x = (w - tw) / 2;
-      const y = h - 85;
-
-      ctx.fillStyle = 'rgba(15, 23, 42, 0.96)';
-      ctx.strokeStyle = '#facc15';
-      ctx.lineWidth = 2;
-      ctx.fillRect(x, y, tw, 36);
-      ctx.strokeRect(x, y, tw, 36);
-
-      ctx.fillStyle = '#fef08a';
-      ctx.textAlign = 'left';
-      ctx.fillText(msg, x + 18, y + 23);
-      ctx.restore();
-    }
-  }
 }

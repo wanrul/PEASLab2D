@@ -8,7 +8,7 @@ try{
  await page.goto(process.env.TEST_URL||'http://localhost:8092');await page.waitForSelector('#beginDesign');
  await page.evaluate(()=>{map3d.renderer.setPixelRatio(.2);map3d.onResize();});await page.locator('#beginDesign').click();
  await page.evaluate(async()=>{
-  window.state=(await import('/js/state.js')).appState;state.unlockedStep=5;openStepModal(4);
+  window.state=(await import('/js/state.js')).appState;state.setTaskPriority('TASK_1','thorough');openStepModal(2);const {observeAllEnvironmentForTest}=await import('/tests/fixtures/structured-solution.mjs');observeAllEnvironmentForTest(state,simEngine.world);state.unlockedStep=6;openStepModal(5);
   const w=robotBlockWorkspace,make=type=>{const b=w.newBlock(type);b.initSvg();b.render();return b;};
   window.menuBlocks={behavior:make('PEAS_BEHAVIOR'),control:make('controls_if'),condition:make('COND_09'),action:make('ACT_18')};
   const {behavior,control,condition,action}=menuBlocks,sensor=make('SENSE_02');

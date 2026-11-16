@@ -28,7 +28,6 @@ for (const radius of [18,20]) {
 import { apartmentCollision } from '../js/sim/apartment-collision-data.js';
 import fs from 'node:fs';
 import crypto from 'node:crypto';
-import { HouseCanvasRenderer } from '../js/view/house-canvas.js';
 
 test('baked collision matches the actual shipped model', () => {
   const bytes=fs.readFileSync(new URL('../assets/Apartment.glb',import.meta.url));
@@ -64,14 +63,10 @@ for(const radius of [18,20]) {
   });
 }
 
-test('teleport cannot bypass walls or place player outside; reset uses safe robot spawn', () => {
-  const world=new ApartmentWorld(),renderer=Object.create(HouseCanvasRenderer.prototype);
-  renderer.world=world;
-  const before={x:world.avatar.x,y:world.avatar.y};
+test('reset returns the robot to a valid model-derived spawn', () => {
+  const world=new ApartmentWorld();
   const outside=point(4,-2);
-  renderer.teleportAvatar(outside.x,outside.y);
-  assert.equal(world.avatar.x,before.x);
-  assert.equal(world.avatar.y,before.y);
+  assert.equal(world.checkCollision(outside.x,outside.y,world.robot.radius),true);
   world.robot.x=outside.x;world.robot.y=outside.y;world.reset();
   assert.equal(world.checkCollision(world.robot.x,world.robot.y,world.robot.radius),false);
 });

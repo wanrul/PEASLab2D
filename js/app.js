@@ -17,11 +17,16 @@ import { BlockCanvasView } from './view/block-canvas.js';
 import { StepsView } from './view/steps-view.js';
 import { sound } from './view/audio.js';
 import { sessionLogger } from './logging/session-log.js';
+import { ENVIRONMENT_ITEMS } from './data/environment.js';
 
-window.addEventListener('DOMContentLoaded', () => {
+window.addEventListener('DOMContentLoaded', async () => {
   initLanguage();
+  // Temporary local preview entries; the normal URL keeps the full study flow.
+  const preview = new URLSearchParams(location.search).get('preview');
+  appState.localPreview = ['localhost','127.0.0.1','[::1]'].includes(location.hostname) && ['sensors','logic','logic-answer'].includes(preview);
   // 1. Initialize World Model
   const world = new ApartmentWorld();
+  appState.configureEnvironment(world);
 
   // 2. Initialize 2D Interactive House Canvas (Rotatable 360°)
   const canvasEl = document.getElementById('houseCanvas');
@@ -53,7 +58,7 @@ window.addEventListener('DOMContentLoaded', () => {
   const povRenderer = new RobotPovRenderer(povModalEl, world, {
     map3d, engine: simEngine,
     capturePage: () => ({
-      mode: currentViewMode, step: appState.currentStep,
+      mode: currentViewMode, step: dashboardStep,
       modalOpen: modalOverlay.style.display !== 'none',
       scrollTop: document.querySelector('.step-modal-body').scrollTop,
       mapCamera: { ...houseCanvas.camera }, heading: houseCanvas.headingAngle,
@@ -85,15 +90,22 @@ window.addEventListener('DOMContentLoaded', () => {
   const viewModeFpsBtn = document.getElementById('viewModeFpsBtn');
   const mapControlsHint = document.getElementById('mapControlsHint');
 
-  let currentViewMode = 'fps'; // '3d' | 'fps' | internal 'fallback'
+  let currentViewMode = 'fps'; // '3d' | 'fps' | 'thirdPerson' | internal 'fallback'
   window.currentViewMode = 'fps';
 
   function switchViewMode(mode) {
-    if (!['3d','fps','robot','fallback'].includes(mode)) return;
-    if (!map3d && mode !== 'fallback') mode = 'fallback';
+    if (!['3d','fps','thirdPerson','robot','fallback'].includes(mode)) return;
     if (appState.isRobotPovActive && mode !== 'robot') povRenderer.exit();
+    if (mode==='fps' || mode==='thirdPerson' || mode==='3d') appState.environmentWalkingEnabled=true;
+    else if (mode==='robot') appState.environmentWalkingEnabled=false;
+    if (!map3d && mode !== 'fallback') mode = 'fallback';
     currentViewMode = mode;
     window.currentViewMode = mode;
+    document.querySelectorAll('[data-environment-view]').forEach(button => {
+      const selected = button.dataset.environmentView === (mode === '3d' ? 'whole' : mode);
+      button.classList.toggle('active', selected);
+      button.setAttribute('aria-pressed', String(selected));
+    });
     [viewMode3DBtn, viewModeFpsBtn].forEach(b => b?.classList.remove('active'));
 
     if (mode === 'robot') {
@@ -121,16 +133,19 @@ window.addEventListener('DOMContentLoaded', () => {
           <span class="hint-key">📐 Pan</span> Right-Drag
           <span class="hint-sep">•</span>
           <span class="hint-key">🎮 Move</span> WASD / Arrows
-          <span class="hint-sep">•</span>
-          <span class="hint-key">🎯 Stations</span> Click 3D Ring
         `;
       }
-    } else if (mode === 'fps') {
-      viewModeFpsBtn?.classList.add('active');
+    } else if (mode === 'fps' || mode === 'thirdPerson') {
+      if(mode==='fps')viewModeFpsBtn?.classList.add('active');
+      if(mode==='thirdPerson') {
+        const followButton=document.getElementById('followRobotBtn');
+        followButton?.classList.remove('active');
+        if(followButton)followButton.innerText='🎥 Follow Robot';
+      }
       if (threeCanvasEl) threeCanvasEl.style.display = 'block';
       if (canvasEl) canvasEl.style.display = 'none';
       if (map3d) {
-        map3d.setViewMode('fps');
+        map3d.setViewMode(mode);
         map3d.onResize();
       }
       if (mapControlsHint) {
@@ -138,10 +153,9 @@ window.addEventListener('DOMContentLoaded', () => {
           <span class="hint-key">🚶 Walk</span> WASD / Arrows
           <span class="hint-sep">•</span>
           <span class="hint-key">👁️ Look 360°</span> Drag Mouse
-          <span class="hint-sep">•</span>
-          <span class="hint-key">🎯 Stations</span> Walk to Ring & [SPACE]
         `;
       }
+      threeCanvasEl?.focus({preventScroll:true});
     } else if (mode === 'fallback') {
       const loadingOverlay = document.getElementById('glbLoadingOverlay');
       if (loadingOverlay) loadingOverlay.style.display = 'none';
@@ -158,8 +172,6 @@ window.addEventListener('DOMContentLoaded', () => {
           <span class="hint-key">📜 Zoom</span> Wheel
           <span class="hint-sep">•</span>
           <span class="hint-key">🧭 360°</span> Q / E Keys
-          <span class="hint-sep">•</span>
-          <span class="hint-key">🎯 Stations</span> [SPACE]
         `;
       }
     }
@@ -239,6 +251,7 @@ window.addEventListener('DOMContentLoaded', () => {
     if (currentViewMode === 'fallback') {
       houseCanvas.focusRobot();
     } else if (map3d) {
+      if(currentViewMode==='thirdPerson')switchViewMode('3d');
       map3d.focusRobot();
     }
   });
@@ -251,6 +264,7 @@ window.addEventListener('DOMContentLoaded', () => {
     if (currentViewMode === 'fallback') {
       isFollowing = houseCanvas.toggleFollowRobot();
     } else if (map3d) {
+      if(currentViewMode==='thirdPerson')switchViewMode('3d');
       isFollowing = map3d.toggleFollowRobot();
     }
     if (isFollowing) {
@@ -270,7 +284,7 @@ window.addEventListener('DOMContentLoaded', () => {
       houseCanvas.setHeading(0);
       houseCanvas.fitView();
     } else if (map3d) {
-      map3d.setViewMode('orbit');
+      switchViewMode('3d');
     }
   });
 
@@ -281,45 +295,113 @@ window.addEventListener('DOMContentLoaded', () => {
   const modalBadge = document.getElementById('modalStepBadge');
   const modalHeading = document.getElementById('modalStepHeading');
   const modalCloseBtn = document.getElementById('stepModalCloseBtn');
-  const modalTabs = document.querySelectorAll('.modal-tab-btn');
-  const topNavItems = document.querySelectorAll('.step-nav-item');
-  const openWorkstationBtn = document.getElementById('openWorkstationBtn');
-  const openWorkstationFabBtn = document.getElementById('openWorkstationFabBtn');
+  const dashboardMenu = document.getElementById('dashboardMenu');
+  const dashboardSteps = document.getElementById('dashboardSteps');
+  const dashboardStepMenu = document.getElementById('dashboardStepMenu');
+  const stepScrollLeft = document.getElementById('stepScrollLeft');
+  const stepScrollRight = document.getElementById('stepScrollRight');
+  function updateStepScroll() {
+    const expanded = modalOverlay.style.display !== 'none';
+    const maximum = dashboardSteps.scrollWidth - dashboardSteps.clientWidth;
+    stepScrollLeft.hidden = !expanded || dashboardSteps.scrollLeft <= 1;
+    stepScrollRight.hidden = !expanded || dashboardSteps.scrollLeft >= maximum - 1;
+  }
+  function scrollStepsToEdge(end) {
+    stepScrollLeft.hidden = !end;
+    stepScrollRight.hidden = end;
+    dashboardSteps.scrollLeft = end ? dashboardSteps.scrollWidth : 0;
+    updateStepScroll();
+  }
+  stepScrollLeft.addEventListener('click', () => scrollStepsToEdge(false));
+  stepScrollRight.addEventListener('click', () => scrollStepsToEdge(true));
+  dashboardSteps.addEventListener('scroll', updateStepScroll, { passive:true });
+  new ResizeObserver(updateStepScroll).observe(dashboardSteps);
+  const environmentSceneTools = document.getElementById('environmentSceneTools');
+  const environmentSceneProgress = document.getElementById('environmentSceneProgress');
+  const environmentSceneContinue = document.getElementById('environmentSceneContinue');
+  environmentSceneProgress.querySelector('.environment-scene-checklist').innerHTML = ENVIRONMENT_ITEMS.map(item =>
+    `<article class="environment-scene-item" data-scene-environment-category="${item.id}"><strong>${item.label}</strong><span class="environment-scene-count"></span></article>`
+  ).join('');
+  const dashboardBody = modalOverlay.querySelector('.step-modal-body');
+  const stepButtons = dashboardSteps.querySelectorAll('[data-step]');
+  let dashboardStep = 0;
+
+  function updateDashboardMenu(step) {
+    dashboardStep = step;
+    const expanded = modalOverlay.style.display !== 'none';
+    const parent = expanded ? dashboardBody.parentElement : dashboardMenu;
+    if (dashboardStepMenu.parentElement !== parent) {
+      const focused = dashboardSteps.contains(document.activeElement) ? document.activeElement : null;
+      parent.insertBefore(dashboardStepMenu, expanded ? dashboardBody : null);
+      focused?.focus({ preventScroll: true });
+    }
+    stepButtons.forEach(button => {
+      const id = Number(button.dataset.step);
+      button.disabled = id > 0 && (!appState.overviewStarted || !appState.canEnterStep(id) || (appState.sessionFinished && id !== 6));
+      button.classList.toggle('active', id === step);
+      if (id === step) button.setAttribute('aria-current', 'step');
+      else button.removeAttribute('aria-current');
+      button.setAttribute('aria-expanded', String(expanded && id === step));
+    });
+    requestAnimationFrame(updateStepScroll);
+    document.getElementById('sensorAssemblyPreview').hidden = !expanded || ![3,4].includes(step) || appState.isRobotPovActive;
+    const observing = step === 2 && !expanded && !appState.isRobotPovActive;
+    environmentSceneTools.hidden = !observing;
+    environmentSceneProgress.hidden = !observing;
+    const progress = appState.getEnvironmentProgress();
+    document.getElementById('environmentSceneTotal').textContent = `${progress.observed} / ${progress.total} observed`;
+    environmentSceneProgress.querySelectorAll('[data-scene-environment-category]').forEach(item => {
+      const status = appState.getEnvironmentProgress(item.dataset.sceneEnvironmentCategory);
+      item.querySelector('.environment-scene-count').textContent = `${status.observed} / ${status.total}`;
+    });
+    environmentSceneProgress.classList.toggle('completed', appState.canContinue(2));
+    environmentSceneContinue.hidden = !observing || !appState.canContinue(2);
+  }
 
   const STEP_METADATA = {
-    1: { badge: 'STEP 1 OF 5 • PEAS: P', heading: 'Set your robot priorities' },
-    2: { badge: 'STEP 2 OF 5 • PEAS: E + S', heading: 'Give your robot senses' },
-    3: { badge: 'STEP 3 OF 5 • PEAS: A', heading: 'Give your robot a body' },
-    4: { badge: 'STEP 4 OF 5 • PEAS: LOGIC', heading: 'Program your robot' },
-    5: { badge: 'STEP 5 OF 5 • PEAS: TEST & REFLECT', heading: 'Run it' }
+    1: { badge: 'STEP 1 OF 6', heading: 'Set performance measurement' },
+    2: { badge: 'STEP 2 OF 6', heading: 'Observe the environment' },
+    3: { badge: 'STEP 3 OF 6', heading: 'Give your robot senses' },
+    4: { badge: 'STEP 4 OF 6', heading: 'Give your robot a body' },
+    5: { badge: 'STEP 5 OF 6', heading: 'Program your robot' },
+    6: { badge: 'STEP 6 OF 6', heading: 'Run it' }
   };
 
-  function updateStepUi(step) {
-    const body=document.querySelector('.step-modal-body');
-    body.classList.toggle('mounting-body',step===2 || step===3);
-    body.classList.toggle('rule-body',step===4);
-    modalOverlay?.classList.toggle('testing-layout',step === 5);
-    document.getElementById('simFloatingHud').hidden = step !== 5 || Boolean(appState.sessionFinished);
-    topNavItems.forEach(item => {
-      const s = parseInt(item.getAttribute('data-step'), 10);
-      item.disabled = !appState.canEnterStep(s) || (appState.sessionFinished && s!==5);
-      if (s === step) item.classList.add('active');
-      else item.classList.remove('active');
-    });
+  const roomViewport = document.getElementById('fullscreenHouseContainer');
+  const topHeader = document.querySelector('.app-header');
 
-    modalTabs.forEach(tab => {
-      const s = parseInt(tab.getAttribute('data-step'), 10);
-      tab.disabled = !appState.canEnterStep(s) || (appState.sessionFinished && s!==5);
-      if (s === step) tab.classList.add('active');
-      else tab.classList.remove('active');
-    });
+  function setWorkstationLayout(open) {
+    modalOverlay.classList.toggle('workstation-layout', open);
+    document.body.classList.toggle('workstation-open', open);
+  }
+
+  new ResizeObserver(() => {
+    document.body.style.setProperty('--workstation-top', `${topHeader.getBoundingClientRect().bottom + 10}px`);
+  }).observe(topHeader);
+  new ResizeObserver(() => {
+    if (currentViewMode === 'fallback') houseCanvas.resizeCanvas();
+    else map3d?.onResize();
+  }).observe(roomViewport);
+
+  function updateStepUi(step) {
+    if(step!==5)blockCanvasView.setExpanded(false);
+    const body=document.querySelector('.step-modal-body');
+    body.classList.toggle('mounting-body',step===3 || step===4);
+    body.classList.toggle('rule-body',step===5);
+    modalOverlay?.classList.toggle('testing-layout',step === 6);
+    setWorkstationLayout(modalOverlay.style.display !== 'none');
+    document.getElementById('simFloatingHud').hidden = step !== 6 || Boolean(appState.sessionFinished);
+    updateDashboardMenu(step);
+    map3d?.setEnvironmentObservation(step===2);
+    houseCanvas.setEnvironmentObservation(step===2);
 
     if (STEP_METADATA[step]) {
+      if (modalBadge) modalBadge.hidden = false;
       if (modalBadge) modalBadge.innerText = `STAGE ${appState.currentStage} OF ${PILOT_STAGES.length} · ${STEP_METADATA[step].badge}`;
       if (modalHeading) modalHeading.innerText = STEP_METADATA[step].heading;
     }
 
-    if (step === 4) {
+    if (step === 5) {
       if (blockCanvasContainer) blockCanvasContainer.style.display = 'block';
       if (stepsPanelEl) stepsPanelEl.style.display = 'none';
       blockCanvasView.render();
@@ -331,53 +413,67 @@ window.addEventListener('DOMContentLoaded', () => {
   }
 
   function showOverview() {
+    blockCanvasView.setExpanded(false);
     if(appState.isRobotPovActive)povRenderer.exit();
     if(blockCanvasContainer)blockCanvasContainer.style.display='none';
     if(stepsPanelEl)stepsPanelEl.style.display='block';
     document.querySelector('.step-modal-body').classList.remove('mounting-body','rule-body');
     modalOverlay.classList.remove('testing-layout');
-    modalBadge.textContent='PEASLab · Overview';
-    modalHeading.textContent='Your household robot challenge';
+    setWorkstationLayout(true);
+    map3d?.setEnvironmentObservation(false);
+    houseCanvas.setEnvironmentObservation(false);
+    modalBadge.textContent='';
+    modalBadge.hidden=true;
+    document.getElementById('simFloatingHud').hidden = true;
+    modalHeading.textContent='Instructions';
     stepsView.renderOverview();
     modalOverlay.style.display='flex';
-    modalCloseBtn.disabled=!appState.overviewStarted;
+    updateDashboardMenu(0);
+    dashboardBody.scrollTop = 0;
     appState.record('OVERVIEW_VIEWED','overview');
   }
   window.showOverview=showOverview;
-  const overviewButton=document.createElement('button');
-  overviewButton.className='btn btn-outline overview-button';
-  overviewButton.textContent='Overview';
-  overviewButton.onclick=showOverview;
-  modalCloseBtn.before(overviewButton);
-
-  function openStepModal(stepNumber) {
-    if(!appState.overviewStarted){showOverview();return;}
-    modalCloseBtn.disabled=false;
+  function openStepModal(stepNumber = dashboardStep) {
+    if (stepNumber === 0 || !appState.overviewStarted) {
+      showOverview();
+      return;
+    }
     if (appState.isRobotPovActive) povRenderer.exit();
     if (stepNumber !== undefined && stepNumber !== null) {
-      if(appState.sessionFinished && stepNumber!==5)return;
-      if(appState.currentStep===5 && stepNumber!==5)simEngine.endRun('revision');
+      if(appState.sessionFinished && stepNumber!==6)return;
+      if(appState.currentStep===6 && stepNumber!==6)simEngine.endRun('revision');
       if (!appState.setStep(stepNumber)) return;
     }
+    const fromOverview = dashboardStep === 0;
+    modalOverlay.style.display = 'flex';
     updateStepUi(appState.currentStep);
-    if (modalOverlay) {
-      modalOverlay.style.display = 'flex';
-    }
+    if (fromOverview) dashboardBody.scrollTop = 0;
   }
 
   function closeStepModal() {
-    if(!appState.overviewStarted)return;
-    if (modalOverlay) {
-      modalOverlay.style.display = 'none';
-    }
+    blockCanvasView.setExpanded(false);
+    const restoreFocus = modalOverlay.contains(document.activeElement) || document.getElementById('sensorAssemblyPreview').contains(document.activeElement);
+    modalOverlay.style.display = 'none';
+    setWorkstationLayout(false);
+    updateDashboardMenu(dashboardStep);
+    if (restoreFocus) dashboardSteps.querySelector('[aria-current="step"]')?.focus({ preventScroll: true });
   }
 
   window.openStepModal = openStepModal;
   window.navigateStep = openStepModal;
-  window.startRulePreview = () => { if (appState.currentStep === 4) simEngine.startPreview(); };
+  window.startRulePreview = () => { if (appState.currentStep === 5) simEngine.startPreview(); };
   window.closeStepModal = closeStepModal;
 
   modalCloseBtn?.addEventListener('click', closeStepModal);
+  roomViewport.addEventListener('pointerdown', event => {
+    if (modalOverlay.style.display !== 'none' &&
+        (event.target === canvasEl || event.target === threeCanvasEl)) closeStepModal();
+  }, true);
+  environmentSceneTools.querySelectorAll('[data-environment-view]').forEach(button => {
+    const views = { fps: 'walkEnvironment', thirdPerson: 'viewYourself', whole: 'viewWholeApartment' };
+    button.addEventListener('click', () => stepsPanelEl.querySelector(`#${views[button.dataset.environmentView]}`)?.click());
+  });
+  environmentSceneContinue.addEventListener('click', () => openStepModal(2));
 
   modalOverlay?.addEventListener('click', (e) => {
     if (e.target === modalOverlay) {
@@ -385,22 +481,13 @@ window.addEventListener('DOMContentLoaded', () => {
     }
   });
 
-  topNavItems.forEach(item => {
-    item.addEventListener('click', () => {
-      const step = parseInt(item.getAttribute('data-step'), 10);
-      openStepModal(step);
-    });
+  stepButtons.forEach(button => {
+    button.addEventListener('click', () => openStepModal(Number(button.dataset.step)));
   });
 
-  modalTabs.forEach(tab => {
-    tab.addEventListener('click', () => {
-      const step = parseInt(tab.getAttribute('data-step'), 10);
-      openStepModal(step);
-    });
-  });
-
-  openWorkstationBtn?.addEventListener('click', () => openStepModal(appState.currentStep));
-  openWorkstationFabBtn?.addEventListener('click', () => openStepModal(appState.currentStep));
+  for (const event of ['purposeChanged', 'environmentObservationChanged', 'sensorsChanged', 'actuatorsChanged', 'programChanged', 'rulesChanged']) {
+    appState.on(event, () => updateDashboardMenu(dashboardStep));
+  }
 
   // Global Keyboard Shortcuts
   window.addEventListener('keydown', (e) => {
@@ -416,12 +503,8 @@ window.addEventListener('DOMContentLoaded', () => {
       return;
     }
 
-    if (e.key === ' ' && e.target.tagName !== 'INPUT' && e.target.tagName !== 'TEXTAREA') {
-      if (houseCanvas.activeStationPrompt) {
-        openStepModal(houseCanvas.activeStationPrompt.step);
-      } else {
-        openStepModal(appState.currentStep);
-      }
+    if (e.key === ' ' && (e.target === document.body || e.target === canvasEl || e.target === threeCanvasEl)) {
+      openStepModal();
       e.preventDefault();
     }
   });
@@ -429,20 +512,20 @@ window.addEventListener('DOMContentLoaded', () => {
   appState.on('stageChanged',()=>{
     simEngine.reset();
     updateStepUi(1);
-    const stageLabel=`Stage ${appState.currentStage} of ${PILOT_STAGES.length} · ${PILOT_STAGES[appState.currentStage-1].name}`;
+    const stageLabel=`Task ${appState.currentStage} of ${PILOT_STAGES.length} · ${PILOT_STAGES[appState.currentStage-1].name}`;
     document.getElementById('stageProgress').textContent=stageLabel;
     document.getElementById('hudTaskName').textContent=stageLabel;
   });
   appState.record('STAGE_STARTED',String(appState.currentStage));
 
   appState.on('stepChanged', ({ step, oldStep }) => {
-    if (oldStep === 4) simEngine.stopPreview();
-    if (oldStep === 5 && step !== 5) simEngine.endRun('revision');
-    if (step !== 5) document.getElementById('reflectionPanel')?.remove();
+    if (oldStep === 5) simEngine.stopPreview();
+    if (oldStep === 6 && step !== 6) simEngine.endRun('revision');
+    if (step !== 6) document.getElementById('reflectionPanel')?.remove();
     updateStepUi(step);
     document.querySelector('.step-modal-body').scrollTop=0;
-    if(step===4 && appState.canContinue(4))simEngine.startPreview();
-    if(step===5)appState.notify('tick',{tick:simEngine.tickCount,scores:simEngine.scores,robot:world.robot});
+    if(step===5 && appState.canContinue(5))simEngine.startPreview();
+    if(step===6)appState.notify('tick',{tick:simEngine.tickCount,scores:simEngine.scores,robot:world.robot});
   });
 
   // -------------------------------------------------------------
@@ -472,7 +555,7 @@ window.addEventListener('DOMContentLoaded', () => {
   const hudSpeedBtns = document.querySelectorAll('.hud-speed-btn');
 
   hudPlayPauseBtn?.addEventListener('click', () => {
-    if(appState.sessionFinished || appState.currentStep!==5)return;
+    if(appState.sessionFinished || appState.currentStep!==6)return;
     if (appState.simRunning) {
       simEngine.stop();
       hudPlayPauseBtn.innerText = '▶';
@@ -480,7 +563,7 @@ window.addEventListener('DOMContentLoaded', () => {
       hudStatusDot?.classList.add('paused');
       if (hudStatusText) hudStatusText.innerText = 'SIM PAUSED';
     } else {
-      if (appState.currentStep !== 5) return;
+      if (appState.currentStep !== 6) return;
       simEngine.start();
       sound.playEvent?.('run');
       hudPlayPauseBtn.innerText = '⏸';
@@ -491,7 +574,7 @@ window.addEventListener('DOMContentLoaded', () => {
   });
 
   hudResetBtn?.addEventListener('click', () => {
-    if(appState.sessionFinished || appState.currentStep!==5)return;
+    if(appState.sessionFinished || appState.currentStep!==6)return;
     simEngine.reset();
   });
 
@@ -515,7 +598,7 @@ window.addEventListener('DOMContentLoaded', () => {
   });
 
   hudOpenLabBtn?.addEventListener('click', () => {
-    openStepModal(5);
+    openStepModal(6);
   });
 
   function updateHudEvidence() {
@@ -525,7 +608,7 @@ window.addEventListener('DOMContentLoaded', () => {
   }
   appState.on('tick', () => {
     updateHudEvidence();
-    if(appState.currentStep===4){const preview=document.getElementById('ruleApartmentPreview');if(preview)preview.getContext('2d').drawImage(canvasEl,0,0,preview.width,preview.height);}
+    if(appState.currentStep===5){const preview=document.getElementById('ruleApartmentPreview');if(preview)preview.getContext('2d').drawImage(canvasEl,0,0,preview.width,preview.height);}
   });
   appState.on('simReset',updateHudEvidence);
 
@@ -540,7 +623,28 @@ window.addEventListener('DOMContentLoaded', () => {
   // Start in the fixed living-room walkthrough; open the workstation on demand.
   switchViewMode(map3d ? 'fps' : 'fallback');
   closeStepModal();
-  showOverview();
+  if (appState.localPreview) {
+    appState.overviewStarted = true;
+    if (preview === 'logic' || preview === 'logic-answer') {
+      appState.setTaskPriority('TASK_1','thorough');
+      for (const id of ['SENSE_07','SENSE_04','SENSE_01','SENSE_09','SENSE_02','SENSE_03']) appState.toggleSensor(id);
+      for (const id of ['ACTUATOR_WHEELS','ACTUATOR_ROTATION','ACTUATOR_ESTOP','ACTUATOR_DOCK_PIN']) appState.toggleActuator(id);
+    }
+    if (preview === 'logic-answer') {
+      const {createLogicAnswerWorkspace}=await import('./view/logic-answer-preview.js');
+      appState.setTaskPriority('TASK_1','speed');
+      appState.blockWorkspace=createLogicAnswerWorkspace();
+      blockCanvasView.answerPreview=true;
+    }
+    openStepModal(preview === 'logic' || preview === 'logic-answer' ? 5 : 3);
+    if (preview === 'logic-answer') {
+      simEngine.stopPreview();
+      blockCanvasView.setExpanded(true);
+      blockCanvasView.workspace.setScale(.8);
+      blockCanvasView.workspace.scroll(0,0);
+    }
+    document.title = 'PEASLab2D · Local preview';
+  } else showOverview();
 
   console.log('🚀 PEASLab2D Initialized for Individual Learning.');
 });

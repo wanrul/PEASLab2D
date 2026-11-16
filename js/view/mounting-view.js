@@ -6,13 +6,11 @@ import { sound } from './audio.js';
 
 const orders = {};
 const slots = { sensor: Array(11).fill(null), actuator: Array(10).fill(null) };
-const selected = { sensor: null, actuator: null };
-const previews = new WeakMap();
-const activePreviews = new Set();
-appState.on('stepChanged', () => {
-  for (const dispose of activePreviews) dispose();
-  activePreviews.clear();
-});
+const sensorCardDescriptions = {
+  SENSE_04: 'Measures obstacle distance in front, back, left and right. It does not identify the obstacle.',
+  SENSE_07: 'Provides position, heading and an automatically recorded local map. Unknown areas remain unknown; it never chooses a route.',
+  SENSE_15: 'Reports the type and location of tagged cups, food, and trash in its forward view. It does not detect the cat, floor dirt, or spills.'
+};
 function randomized(catalog, kind) {
   if (!orders[kind]) {
     orders[kind] = [...catalog];
@@ -24,155 +22,52 @@ function randomized(catalog, kind) {
   return orders[kind];
 }
 export function moduleCard(item, kind, mounted = false) {
-  const description = item.id === 'ACTUATOR_SPEED_CTRL' ? 'Adjusts how quickly the robotic arm extends.' : (kind === 'sensor' ? item.measures : item.does).split(/(?<=[.!?])\s/)[0];
-  return `<button class="module-card ${mounted ? 'mounted' : ''}" draggable="true" data-module-id="${item.id}" aria-pressed="${mounted}"><span class="module-icon">${item.icon}</span><strong>${item.name}</strong><span>${description}</span></button>`;
+  const description = kind === 'sensor'
+    ? sensorCardDescriptions[item.id] ?? item.measures.split(/(?<=[.!?])\s/)[0]
+    : item.id === 'ACTUATOR_SPEED_CTRL' ? 'Adjusts how quickly the robotic arm extends.' : item.does.split(/(?<=[.!?])\s/)[0];
+  return `<button class="module-card ${mounted ? 'mounted' : ''}" draggable="false" data-module-id="${item.id}" aria-pressed="${mounted}"><span class="module-icon">${item.icon}</span><strong>${item.name}</strong><span>${description}</span></button>`;
 }
 export function referenceStrip() {
-  return `<div class="task-reference-strip">${TASKS_CATALOG.filter(t => appState.selectedTasks.includes(t.id)).map(t => `<span>${t.icon} ${t.shortName || t.name}</span>`).join('')}</div>`;
+  const tasks = appState.selectedTasks.map(id => TASKS_CATALOG.find(task => task.id === id)).filter(Boolean);
+  return `<div class="task-reference-strip" role="group" aria-label="Current task requirements">${tasks.map(task => `<span>${task.icon} ${task.shortName || task.name}</span>`).join('')}</div>`;
 }
-function renderMounting(container, kind) {
+function renderClickMounting(container, kind) {
   const sameEditor = container.querySelector('.mounting-editor')?.dataset?.kind === kind;
-  const libraryScroll = sameEditor ? container.querySelector('.mounting-library')?.scrollTop || 0 : 0;
-  previews.get(container)?.();
-  const sensor = kind === 'sensor';
-  const catalog = sensor ? SENSORS_CATALOG : ACTUATORS_CATALOG;
-  const installed = sensor ? appState.installedSensors : appState.installedActuators;
-  const capacity = sensor ? appState.sensorBudget : 10;
+  const scrollTop = sameEditor ? container.querySelector('.mounting-library')?.scrollTop || 0 : 0;
+  const sensor = kind === 'sensor', catalog = sensor ? SENSORS_CATALOG : ACTUATORS_CATALOG;
+  const installed = sensor ? appState.installedSensors : appState.installedActuators, capacity = sensor ? appState.sensorBudget : 10;
   slots[kind] = slots[kind].map(id => installed.has(id) ? id : null);
   for (const id of installed) if (!slots[kind].includes(id)) slots[kind][slots[kind].indexOf(null)] = id;
-  container.innerHTML = `<div class="mounting-editor" data-kind="${kind}"><h2>${sensor ? 'Give your robot senses' : 'Give your robot a body'}</h2><p>${sensor ? 'Walk the apartment. Then mount the sensors your robot needs.' : 'Mount the parts your robot needs for the current tasks.'}</p>${referenceStrip()}
-    <div class="mounting-layout"><div class="mounting-library">${randomized(catalog, kind).map(item => moduleCard(item, kind, installed.has(item.id))).join('')}</div>
-    <div class="mounting-assembly"><div class="assembly-preview" aria-label="${sensor ? 'Robot sensor silhouette' : '3D robot assembly'}">${sensor ? `<div class="sensor-robot-preview"><div class="sensor-silhouette" aria-hidden="true">◉<br>▰<br>▥ ▥</div>${slots.sensor.map((id,index)=>{const item=SENSORS_CATALOG.find(item=>item.id===id);return item?`<span class="attached-sensor" data-attached-sensor="${id}" style="--sensor-x:${index<6?12:68}%;--sensor-y:${12+(index%6)*14}%" title="${item.name}">${item.icon} ${item.shortName||item.name}</span>`:'';}).join('')}</div>` : '<canvas class="assembly-canvas" style="width:100%;height:260px;display:block"></canvas>'}</div>
-    <div class="mounting-points">${slots[kind].slice(0,capacity).map((id, index) => {
-      const item = catalog.find(m => m.id === id);
-      return `<button class="mount-point ${id ? 'mounted' : ''}" data-mount-index="${index}" aria-label="Mounting point ${index + 1}${item ? ': ' + item.name + ', remove or replace' : ': empty'}">${item ? `${item.icon} ${item.shortName || item.name}` : `＋ ${index + 1}`}</button>`;
-    }).join('')}</div><p class="mount-count">${installed.size} / ${capacity} mounted</p>
-    <p class="mount-gate">${sensor ? `Stage ${appState.currentStage} budget: ` : ''}Up to ${capacity} ${sensor ? 'sensors' : 'actuators'}. No minimum selection.</p>
-    <div class="mounting-actions">${sensor ? '<button class="btn btn-outline mounting-pov">See what your robot sees</button>' : ''}
-    <button class="btn btn-primary mounting-continue" ${installed.size <= capacity ? '' : 'disabled'}>Continue</button></div></div></div></div>`;
-  const toggle = id => sensor ? appState.toggleSensor(id) : appState.toggleActuator(id);
-  const mount = (index, id) => {
-    if (!catalog.some(item => item.id === id)) return;
-    const old = slots[kind][index];
-    if (old === id) return;
-    const existingIndex = slots[kind].indexOf(id);
-    if (!old && existingIndex < 0 && installed.size >= capacity) {
-      const result=toggle(id);
-      container.querySelector('.mount-gate').textContent=result.reason || `Up to ${capacity} mounted. Remove or replace a module.`;
-      return;
-    }
-    if (existingIndex >= 0) {
-      slots[kind][existingIndex] = old;
-      appState.record(sensor ? 'SENSOR_MOUNTED' : 'ACTUATOR_MOUNTED', id, {mountPoint:index,previousPoint:existingIndex,swappedWith:old,installed:[...installed]});
-    }
-    else if (old) toggle(old);
-    slots[kind][index] = id;
-    if (!installed.has(id)) toggle(id);
+  container.innerHTML = `<div class="mounting-editor click-mounting-editor ${kind}-editor" data-kind="${kind}"><h2>${sensor?'Sensor library':'Actuator library'}</h2><p>${sensor?'Click a Sensor to install it. Click it again to remove it.':'Click an Actuator to install it. Click it again to remove it.'}</p>${referenceStrip()}
+    <p class="mount-gate" role="status">${sensor?`Stage ${appState.currentStage} budget: `:''}Up to ${capacity} ${sensor?'sensors':'actuators'}. No minimum selection.</p>
+    <div class="mounting-library">${randomized(catalog,kind).map(item => moduleCard(item,kind,installed.has(item.id))).join('')}</div>
+    <footer class="step-nav-footer"><span class="mount-count">${installed.size} / ${capacity} mounted</span><button class="btn btn-primary mounting-continue" ${installed.size > capacity ? 'disabled' : ''}>Continue</button></footer></div>`;
+  const preview = globalThis.document?.getElementById('sensorAssemblyPreview');
+  if (preview) { preview.dataset.kind = kind; preview.setAttribute('aria-label',sensor?'Robot sensor preview':'Robot actuator preview'); }
+  if (preview) preview.innerHTML = `<h3>Robot preview</h3><div class="sensor-body-preview">
+    <svg viewBox="0 0 320 260" aria-hidden="true"><ellipse cx="160" cy="151" rx="145" ry="91" fill="#94a3b8"/><ellipse cx="160" cy="125" rx="145" ry="101" fill="#e2e8f0" stroke="#64748b" stroke-width="3"/><ellipse cx="160" cy="125" rx="134" ry="91" fill="#f8fafc" stroke="#cbd5e1" stroke-width="2"/><ellipse cx="160" cy="125" rx="29" ry="23" fill="#cbd5e1"/><path d="M77 207 Q160 246 243 207" fill="none" stroke="#475569" stroke-width="9" stroke-linecap="round"/></svg>
+    <div class="sensor-body-slots" role="group" aria-label="${sensor?'Sensor slots':'Actuator slots'}">${slots[kind].slice(0,capacity).map((id,index) => {
+      const item = catalog.find(sensor => sensor.id === id), angle = index * Math.PI * 2 / capacity - Math.PI / 2;
+      return `<button type="button" class="sensor-body-slot ${item?'mounted':''}" data-mount-index="${index}" ${item?`data-attached-${kind}="${id}"`:''} style="left:${50+33*Math.cos(angle)}%;top:${48+29*Math.sin(angle)}%" aria-label="${item?item.name:(sensor?'Empty sensor slot':'Empty actuator slot')}" title="${item?item.name:(sensor?'Empty sensor slot':'Empty actuator slot')}">${item?item.icon:'+'}</button>`;
+    }).join('')}</div></div><h4>${sensor?'Installed Sensors':'Installed Actuators'}</h4><div class="installed-sensor-list">${slots[kind].filter(Boolean).map(id => {
+      const item = catalog.find(sensor => sensor.id === id);
+      return `<button type="button" class="installed-sensor-name" data-remove-${kind}="${id}" title="${item.name}"><span>${item.name}</span><span aria-hidden="true">×</span></button>`;
+    }).join('') || (sensor?'<p>No Sensors installed yet.</p>':'<p>No Actuators installed yet.</p>')}</div><button class="btn btn-outline mounting-pov">See what your robot sees</button>`;
+  const toggle = id => {
+    const result = sensor ? appState.toggleSensor(id) : appState.toggleActuator(id);
+    if (!result.success) { container.querySelector('.mount-gate').textContent = result.reason || `Up to ${capacity} mounted. Remove or replace a module.`; return; }
     sound.playSnap();
-    selected[kind] = null;
-    renderMounting(container, kind);
-    if (!sensor) animateAssembly(container, id);
+    renderClickMounting(container,kind);
+    container.querySelector(`[data-module-id="${id}"]`)?.focus({preventScroll:true});
   };
-  container.querySelectorAll('.module-card').forEach(card => {
-    card.onclick = () => {
-      selected[kind] = card.dataset.moduleId;
-      container.querySelectorAll('.module-card').forEach(c => c.classList.toggle('selected', c === card));
-    };
-    card.ondragstart = event => event.dataTransfer.setData('text/plain', card.dataset.moduleId);
-  });
-  container.querySelectorAll('.mount-point').forEach(point => {
-    const index = Number(point.dataset.mountIndex);
-    point.onclick = () => {
-      if (selected[kind]) mount(index, selected[kind]);
-      else if (slots[kind][index]) {
-        const id = slots[kind][index];
-        slots[kind][index] = null;
-        toggle(id);
-        sound.playClick();
-        renderMounting(container, kind);
-      }
-    };
-    point.ondragover = event => event.preventDefault();
-    point.ondrop = event => { event.preventDefault(); mount(index, event.dataTransfer.getData('text/plain')); };
-  });
-  container.querySelector('.mounting-continue').onclick = () => {
-    if (installed.size > capacity) return;
-    if (window.navigateStep) window.navigateStep(sensor ? 3 : 4); else appState.setStep(sensor ? 3 : 4);
-  };
-  const pov = container.querySelector('.mounting-pov');
+  container.querySelectorAll('.module-card').forEach(card => { card.onclick = () => toggle(card.dataset.moduleId); });
+  preview?.querySelectorAll(`[data-attached-${kind}]`).forEach(point => { point.onclick = () => toggle(point.getAttribute(`data-attached-${kind}`)); });
+  preview?.querySelectorAll(`[data-remove-${kind}]`).forEach(name => { name.onclick = () => toggle(name.getAttribute(`data-remove-${kind}`)); });
+  const pov = preview?.querySelector('.mounting-pov');
   if (pov) pov.onclick = () => window.enterRobotPov?.();
-  const library=container.querySelector('.mounting-library');
-  if(library)library.scrollTop=libraryScroll;
-  if (!sensor) animateAssembly(container);
+  container.querySelector('.mounting-continue').onclick = () => window.navigateStep?.(sensor?4:5);
+  const library = container.querySelector('.mounting-library');
+  if (library) library.scrollTop = scrollTop;
 }
-export function renderSensorStep(container) { renderMounting(container, 'sensor'); }
-export function renderActuatorStep(container) { renderMounting(container, 'actuator'); }
-
-// Keep the demonstration local: it never changes the learner's simulation.
-async function animateAssembly(container, activeId = null) {
-  previews.get(container)?.();
-  let disposed = false;
-  let frame;
-  let renderer;
-  let scene;
-  const dispose = () => {
-    activePreviews.delete(dispose);
-    disposed = true;
-    cancelAnimationFrame(frame);
-    scene?.traverse(object => {
-      object.geometry?.dispose();
-      object.material?.dispose();
-    });
-    renderer?.dispose();
-  };
-  previews.set(container, dispose);
-  activePreviews.add(dispose);
-  const THREE = await import('../../lib/three/three.module.js');
-  if (disposed || !container.isConnected) return;
-  const canvas = container.querySelector('.assembly-canvas');
-  if (!canvas) return;
-  try { renderer = new THREE.WebGLRenderer({ canvas, alpha: true, antialias: true }); }
-  catch {
-    canvas.replaceWith(Object.assign(document.createElement('p'), { textContent: '3D assembly preview is unavailable. Installed modules are labeled at their mounting points below.' }));
-    return;
-  }
-  renderer.setSize(canvas.clientWidth || 360, 260, false);
-  renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
-  scene = new THREE.Scene();
-  const camera = new THREE.PerspectiveCamera(38, (canvas.clientWidth || 360) / 260, 0.1, 100);
-  camera.position.set(3.2, 2.5, 4.8);
-  camera.lookAt(0, 0, 0);
-  scene.add(new THREE.HemisphereLight(0xffffff, 0x445166, 3));
-  const group = new THREE.Group();
-  scene.add(group);
-  const body = new THREE.Mesh(new THREE.CylinderGeometry(0.9, 1, 0.6, 32), new THREE.MeshStandardMaterial({ color: 0xcbd5e1, roughness: 0.4 }));
-  group.add(body);
-  const animated = [];
-  const ids = slots.actuator.filter(Boolean);
-  ids.forEach((id, index) => {
-    const wheel = id.includes('WHEELS') || id.includes('ROTATION');
-    const arm = /ARM|GRIP/.test(id);
-    const geometry = wheel ? new THREE.CylinderGeometry(0.3, 0.3, 0.2, 16) : new THREE.BoxGeometry(arm ? 0.18 : 0.32, arm ? 0.65 : 0.18, 0.32);
-    const mesh = new THREE.Mesh(geometry, new THREE.MeshStandardMaterial({ color: id === activeId ? 0x38bdf8 : 0x64748b }));
-    const angle = index * Math.PI * 2 / 10;
-    mesh.position.set(Math.cos(angle) * 0.9, arm ? 0.5 : -0.15, Math.sin(angle) * 0.9);
-    if (wheel) mesh.rotation.z = Math.PI / 2;
-    group.add(mesh);
-    animated.push({ mesh, id, y: mesh.position.y, wheel, arm });
-  });
-  const start = performance.now();
-  const draw = now => {
-    if (disposed || !container.isConnected) { previews.get(container)?.(); return; }
-    const t = Math.min((now - start) / 1000, 1);
-    for (const { mesh, id, y, wheel, arm } of animated) {
-      if (id !== activeId) continue;
-      const pulse = Math.sin(t * Math.PI);
-      if (wheel) mesh.rotation.y = t * Math.PI * 4;
-      else if (arm) mesh.scale.y = 1 + pulse * 0.8;
-      else mesh.position.y = y - pulse * 0.3;
-    }
-    renderer.render(scene, camera);
-    if (t < 1) frame = requestAnimationFrame(draw);
-  };
-  frame = requestAnimationFrame(draw);
-}
+export function renderSensorStep(container) { renderClickMounting(container,'sensor'); }
+export function renderActuatorStep(container) { renderClickMounting(container,'actuator'); }

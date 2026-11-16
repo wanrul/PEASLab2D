@@ -125,7 +125,7 @@ export const DEFAULT_RULE_TEMPLATES = [
   {
     taskIndex: 0,
     taskId: 'TASK_1',
-    taskName: 'Vacuum the floor',
+    taskName: 'Navigation & common behaviors',
     slots: {
       sense: 'SENSE_05',
       condition: 'COND_03',
@@ -136,7 +136,7 @@ export const DEFAULT_RULE_TEMPLATES = [
   {
     taskIndex: 1,
     taskId: 'TASK_2',
-    taskName: 'Pick up and sort scattered objects',
+    taskName: 'Vacuum and mop',
     slots: {
       sense: 'SENSE_15',
       condition: 'COND_16',
@@ -147,7 +147,7 @@ export const DEFAULT_RULE_TEMPLATES = [
   {
     taskIndex: 2,
     taskId: 'TASK_3',
-    taskName: 'Detect and clean spills',
+    taskName: 'Pick up and sort',
     slots: {
       sense: 'SENSE_06',
       condition: 'COND_04',

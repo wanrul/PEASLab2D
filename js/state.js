@@ -6,11 +6,13 @@
 import { DEFAULT_RULE_TEMPLATES, ALL_BLOCKS } from './data/blocks.js';
 import { validateProgram } from './sim/program.js';
 import { PILOT_STAGES, TASK_PURPOSES } from './pilot-config.js';
+import { ENVIRONMENT_ITEMS, ENVIRONMENT_OBSERVATION_RADIUS, getEnvironmentTargets, hasEnvironmentLineOfSight } from './data/environment.js';
 
 class StateManager {
   constructor() {
     this.eventOrder = 0;
-    this.currentStep = 1; // 1: Purpose/P, 2: World/E+S, 3: Body/A, 4: Logic/Code, 5: Test/Debug
+    this.localPreview = false;
+    this.currentStep = 1; // 1: Purpose/P, 2: Environment/E, 3: Sensors/S, 4: Actuators/A, 5: Logic, 6: Test
     this.participantId = 'Learner';
 
     // Step 1: Purpose & Performance Measures
@@ -33,21 +35,27 @@ class StateManager {
       Hazard: 20
     };
 
-    // Step 2: Sensors
+    // Step 2: Environment observation
+    this.environmentWorld = null;
+    this.environmentTargets = [];
+    this.observedEnvironmentTargets = new Set();
+    this.environmentWalkingEnabled = true;
+
+    // Step 3: Sensors
     this.installedSensors = new Set();
     this.isRobotPovActive = false;
 
-    // Step 3: Actuators
+    // Step 4: Actuators
     this.installedActuators = new Set();
 
-    // Step 4: Structured programs; legacy rules retain compatible primitive APIs.
+    // Step 5: Structured programs; legacy rules retain compatible primitive APIs.
     this.program = [];
     this.blockWorkspace = null;
     this.nextRuleId = 1;
     this.rulesRevision = 0;
     this.rules = DEFAULT_RULE_TEMPLATES.map(task => this.createRule(task));
 
-    // Step 5: Simulation & Observation
+    // Step 6: Simulation & Observation
     this.simRunning = false;
     this.simTick = 0;
     this.simSpeed = 1; // 1x, 2x, 5x
@@ -87,17 +95,53 @@ class StateManager {
 
   canContinue(step = this.currentStep) {
     if (step === 1) return PILOT_STAGES[this.currentStage-1].missionTaskIds.every(id => Boolean(this.stagePurposes[this.currentStage]?.[id]?.priority));
-    if (step === 2) return this.installedSensors.size <= this.sensorBudget;
-    if (step === 3) return this.installedActuators.size <= 10;
-    if (step === 4 && this.blockWorkspace !== null) return this.program.some(b=>this.selectedTasks.includes(b.taskId));
-    if (step === 4 && this.program.length) return true;
-    if (step === 4) return this.getUnlockedRules().some(rule => rule.slots.sense && rule.slots.action);
-    return step === 5;
+    if (step === 2) return this.observedEnvironment.size === ENVIRONMENT_ITEMS.length;
+    if (step === 3) return this.installedSensors.size <= this.sensorBudget;
+    if (step === 4) return this.installedActuators.size <= 10;
+    if (step === 5 && this.blockWorkspace !== null) return this.program.some(b=>this.selectedTasks.includes(b.taskId));
+    if (step === 5 && this.program.length) return true;
+    if (step === 5) return this.getUnlockedRules().some(rule => rule.slots.sense && rule.slots.action);
+    return step === 6;
   }
 
   canEnterStep(step) {
-    return Number.isInteger(step) && step >= 1 && step <= 5 &&
-      (step <= this.unlockedStep || (step === this.currentStep + 1 && this.canContinue()));
+    return Number.isInteger(step) && step >= 1 && step <= 6 &&
+      (this.localPreview || ((step < 3 || this.canContinue(2)) &&
+      (step <= this.unlockedStep || (step === this.currentStep + 1 && this.canContinue()))));
+  }
+
+  configureEnvironment(world) {
+    this.environmentWorld = world;
+    this.environmentTargets = getEnvironmentTargets(world);
+  }
+
+  getEnvironmentProgress(category) {
+    const targets = category ? this.environmentTargets.filter(target => target.category === category) : this.environmentTargets;
+    return { observed: targets.filter(target => this.observedEnvironmentTargets.has(target.id)).length, total: targets.length };
+  }
+
+  get observedEnvironment() {
+    return new Set(ENVIRONMENT_ITEMS.filter(item => {
+      const progress = this.getEnvironmentProgress(item.id);
+      return progress.total > 0 && progress.observed === progress.total;
+    }).map(item => item.id));
+  }
+
+  observeEnvironment(world, mode) {
+    if (world !== this.environmentWorld || this.currentStep !== 2 || this.isRobotPovActive ||
+        !this.environmentWalkingEnabled || !['fps', 'thirdPerson', '3d', 'fallback'].includes(mode)) return [];
+    const observed = [];
+    for (const target of this.environmentTargets) {
+      if (this.observedEnvironmentTargets.has(target.id)) continue;
+      if (target.id === 'PERSON' && mode === 'fps') continue;
+      const distance = Math.hypot(world.avatar.x - target.entity.x, world.avatar.y - target.entity.y);
+      if (distance > ENVIRONMENT_OBSERVATION_RADIUS || !hasEnvironmentLineOfSight(world.avatar, target.entity)) continue;
+      this.observedEnvironmentTargets.add(target.id);
+      observed.push(target.id);
+      this.record('ENVIRONMENT_TARGET_OBSERVED', target.id, { category: target.category, distance, ...(target.id === 'PERSON' ? { reason: 'self-view', mode } : {}) }, 2);
+    }
+    if (observed.length) this.notify('environmentObservationChanged', { ids: observed, observedEnvironment: [...this.observedEnvironment], observedEnvironmentTargets: [...this.observedEnvironmentTargets] });
+    return observed;
   }
 
   setStep(step) {
@@ -121,7 +165,7 @@ class StateManager {
   }
 
   createStagePurposes(stageId) {
-    return Object.fromEntries(PILOT_STAGES[stageId - 1].missionTaskIds.map(id => [id, { purpose: TASK_PURPOSES[id].purpose, priority: null }]));
+    return Object.fromEntries(PILOT_STAGES[stageId - 1].missionTaskIds.map(id => [id, { purpose: TASK_PURPOSES[id].purpose, priority: id==='TASK_3'?'correct':null }]));
   }
 
   setTaskPurpose(taskId, purpose) {
@@ -138,6 +182,9 @@ class StateManager {
     const task = this.stagePurposes[this.currentStage]?.[taskId];
     if (!task || !this.selectedTasks.includes(taskId) || !TASK_PURPOSES[taskId].priorities.some(([id]) => id === priority)) return false;
     task.priority = priority;
+    if (['TASK_1','TASK_2'].includes(taskId)) {
+      for (const id of ['TASK_1','TASK_2']) if (this.stagePurposes[this.currentStage][id]) this.stagePurposes[this.currentStage][id].priority=priority;
+    }
     this.rulesRevision++;
     this.record('TASK_PRIORITY_CHANGED', taskId, { taskId, priority });
     this.notify('purposeChanged', { taskId });
@@ -165,7 +212,9 @@ class StateManager {
   get sensorBudget() { return PILOT_STAGES[this.currentStage - 1].sensorBudget; }
 
   getConfiguration() {
-    return { stageId: this.currentStage, sensorBudget: this.sensorBudget, taskIds: [...this.selectedTasks], purposes: structuredClone(this.stagePurposes[this.currentStage]),
+    return { ...(this.localPreview ? {localPreview:true} : {}), stageId: this.currentStage, sensorBudget: this.sensorBudget, taskIds: [...this.selectedTasks], purposes: structuredClone(this.stagePurposes[this.currentStage]),
+      observedEnvironment: [...this.observedEnvironment],
+      observedEnvironmentTargets: [...this.observedEnvironmentTargets],
       program: structuredClone(this.program), workspace: structuredClone(this.blockWorkspace),
       sensors: [...this.installedSensors], actuators: [...this.installedActuators], rules: structuredClone(this.getUnlockedRules()) };
   }
@@ -185,6 +234,7 @@ class StateManager {
     this.currentStage = to;
     this.selectedTasks = [...PILOT_STAGES[to - 1].taskIds];
     this.stagePurposes[to] = { ...this.createStagePurposes(to), ...structuredClone(this.stagePurposes[from]) };
+    if(this.stagePurposes[to].TASK_2)this.stagePurposes[to].TASK_2.priority=this.stagePurposes[to].TASK_1.priority;
     this.stageResults[to] = { passingRunId: null, closingText: '' };
     this.currentStep = this.unlockedStep = 1;
     this.stepEnteredAt = Date.now();

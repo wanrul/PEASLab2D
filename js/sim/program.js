@@ -1,8 +1,10 @@
+import {validateLearnerProgram,runLearnerProgram} from './learner-program.js';
 import { ACTION_BLOCKS, CONDITION_BLOCKS, SENSE_BLOCKS } from '../data/blocks.js';
 const actions = new Set(ACTION_BLOCKS.map(b=>b.id));
 const sensors = new Set(SENSE_BLOCKS.map(b=>b.id));
 /** Serializable, acyclic tree; no executable strings, at most 512 nodes / depth 32. */
 export function validateProgram(program) {
+  if(Array.isArray(program)&&program.some(n=>n?.model==='learner'||n?.type==='procedure'))return validateLearnerProgram(program);
   const seen=new Set(), ids=new Set(); let count=0;
   const list=(xs,depth)=>Array.isArray(xs)&&xs.every(x=>['action','if','sequence','repeatUntil','repeatWhile','waitUntil','wait'].includes(x?.type)&&node(x,depth+1));
   const node=(n,depth)=>{
@@ -42,6 +44,7 @@ export function evaluateCondition(node, engine, percepts, mounted) {
 }
 /** Cooperative interpreter state is plain data so preview can snapshot/restore it. */
 export function evaluateProgram(engine, program, percepts, state) {
+  if(program.some(n=>n.model==='learner'||n.type==='procedure'))return runLearnerProgram(engine,program,percepts,state);
   let budget=256;
   engine.programDiagnostic=null;
   engine.programReads=[];
